@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    appDir: true, // <-- this line enables the /app directory routing
+  },
 };
 
 export default nextConfig;
