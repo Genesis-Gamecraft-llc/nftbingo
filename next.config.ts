@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // no need for experimental.appDir in Next.js 13.4+
+  experimental: {
+    turbo: {
+      enabled: false,
+    },
+  },
   reactStrictMode: true,
 };
 
