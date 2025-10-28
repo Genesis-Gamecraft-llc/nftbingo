@@ -1,8 +1,11 @@
 "use client";
 
+import BingoBalls from "@/components/BingoBalls";
+
 export default function Home() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white to-slate-100 text-slate-800">
+    <main className="relative min-h-screen bg-gradient-to-b from-white to-slate-100 overflow-hidden">
+      <BingoBalls />
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white py-24 px-6 text-center">
         {/* Floating balls (decorative) */}
