@@ -29,7 +29,7 @@ export default function Home() {
           <h2 className="text-4xl md:text-6xl font-extrabold leading-tight">
             Bingo on&nbsp;
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600">
-              Solana
+              Polygon
             </span>
           </h2>
           <p className="mt-5 text-lg text-slate-600">
