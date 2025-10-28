@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { Menu, X } from "lucide-react";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const navItems = [
     { name: "Home", href: "/" },
@@ -20,14 +23,14 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
-          <img src="/logoinprogress.png" alt="NFT Bingo Logo" className="h-10 w-auto" />
+        <img src="/logoinprogress.png" alt="NFT Bingo Logo" className="h-16 w-auto" />
           <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-lg">
             NFTBingo
           </span>
         </Link>
 
-        {/* Navigation Links */}
-        <div className="hidden md:flex gap-6">
+        {/* Desktop Menu */}
+        <div className="hidden md:flex gap-6 items-center">
           {navItems.map((item) => (
             <Link
               key={item.name}
@@ -41,13 +44,43 @@ export default function Navbar() {
               {item.name}
             </Link>
           ))}
+          <button className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:shadow-md">
+            Connect Wallet
+          </button>
         </div>
 
-        {/* Connect Wallet (placeholder for now) */}
-        <button className="hidden md:block bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:shadow-md">
-          Connect Wallet
+        {/* Mobile Menu Button */}
+        <button
+          className="md:hidden text-slate-700 hover:text-pink-600"
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="Toggle menu"
+        >
+          {menuOpen ? <X size={28} /> : <Menu size={28} />}
         </button>
       </div>
+
+      {/* Mobile Dropdown Menu */}
+      {menuOpen && (
+        <div className="md:hidden bg-white border-t border-slate-200 shadow-lg">
+          <div className="flex flex-col items-center py-4 space-y-3">
+            {navItems.map((item) => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={`font-medium ${
+                  pathname === item.href ? "text-pink-600" : "text-slate-700 hover:text-pink-600"
+                }`}
+                onClick={() => setMenuOpen(false)}
+              >
+                {item.name}
+              </Link>
+            ))}
+            <button className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:shadow-md">
+              Connect Wallet
+            </button>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
