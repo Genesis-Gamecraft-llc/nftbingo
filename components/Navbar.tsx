@@ -19,23 +19,28 @@ export default function Navbar() {
   ];
 
   return (
-    <nav className="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-slate-200">
-      <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
-        <img src="/logoinprogress.png" alt="NFT Bingo Logo" className="h-16 w-auto" />
-          <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-lg">
+    <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
+      <div className="max-w-7xl mx-auto flex items-center justify-between px-8 py-6">
+        
+        {/* Logo section */}
+        <Link href="/" className="flex items-center gap-4 group">
+          <img
+            src="/logoinprogress.png"
+            alt="NFT Bingo Logo"
+            className="h-24 md:h-28 w-auto drop-shadow-lg transition-transform duration-300 group-hover:scale-105"
+          />
+          <span className="hidden md:inline font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-3xl md:text-4xl tracking-tight">
             NFTBingo
           </span>
         </Link>
 
-        {/* Desktop Menu */}
-        <div className="hidden md:flex gap-6 items-center">
+        {/* Desktop menu */}
+        <div className="hidden md:flex gap-8 items-center">
           {navItems.map((item) => (
             <Link
               key={item.name}
               href={item.href}
-              className={`font-medium transition-all ${
+              className={`font-semibold transition-all ${
                 pathname === item.href
                   ? "text-pink-600 border-b-2 border-pink-500"
                   : "text-slate-700 hover:text-pink-600"
@@ -44,22 +49,22 @@ export default function Navbar() {
               {item.name}
             </Link>
           ))}
-          <button className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:shadow-md">
+          <button className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:shadow-lg transition-all">
             Connect Wallet
           </button>
         </div>
 
-        {/* Mobile Menu Button */}
+        {/* Mobile menu button */}
         <button
           className="md:hidden text-slate-700 hover:text-pink-600"
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label="Toggle menu"
         >
-          {menuOpen ? <X size={28} /> : <Menu size={28} />}
+          {menuOpen ? <X size={32} /> : <Menu size={32} />}
         </button>
       </div>
 
-      {/* Mobile Dropdown Menu */}
+      {/* Mobile dropdown */}
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-slate-200 shadow-lg">
           <div className="flex flex-col items-center py-4 space-y-3">
@@ -68,14 +73,16 @@ export default function Navbar() {
                 key={item.name}
                 href={item.href}
                 className={`font-medium ${
-                  pathname === item.href ? "text-pink-600" : "text-slate-700 hover:text-pink-600"
+                  pathname === item.href
+                    ? "text-pink-600"
+                    : "text-slate-700 hover:text-pink-600"
                 }`}
                 onClick={() => setMenuOpen(false)}
               >
                 {item.name}
               </Link>
             ))}
-            <button className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:shadow-md">
+            <button className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-5 py-2 rounded-lg font-semibold hover:shadow-md">
               Connect Wallet
             </button>
           </div>
