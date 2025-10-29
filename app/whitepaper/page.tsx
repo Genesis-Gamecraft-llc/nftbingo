@@ -7,7 +7,7 @@ export default function WhitepaperPage() {
     try {
       console.log("🟢 Starting PDF generation...");
 
-      // Dynamic import to avoid SSR issues
+      // Dynamically import client-only libraries
       const jsPDF = (await import("jspdf")).default;
       const html2canvas = (await import("html2canvas")).default;
       console.log("✅ Libraries loaded successfully");
@@ -19,22 +19,24 @@ export default function WhitepaperPage() {
       }
 
       console.log("🟡 Capturing element with html2canvas...");
-      // @ts-ignore
-      const canvas = await html2canvas(element, {
+
+      // Cast the options to `any` to bypass outdated type definitions
+      const options: any = {
         scale: 2,
         useCORS: true,
-        backgroundColor: "#ffffff", // Force white background (avoids transparent LAB errors)
-        onclone: (clonedDoc) => {
-          // Remove Tailwind's gradient backgrounds before render to prevent LAB parsing errors
+        backgroundColor: "#ffffff",
+        onclone: (clonedDoc: Document) => {
           clonedDoc.querySelectorAll("*").forEach((el) => {
-            const style = window.getComputedStyle(el);
+            const style = window.getComputedStyle(el as HTMLElement);
             if (style.backgroundImage.includes("gradient")) {
               (el as HTMLElement).style.backgroundImage = "none";
               (el as HTMLElement).style.backgroundColor = "#ffffff";
             }
           });
         },
-      });
+      };
+
+      const canvas = await html2canvas(element, options);
 
       console.log("✅ Canvas captured successfully.");
 
@@ -50,7 +52,9 @@ export default function WhitepaperPage() {
       console.log("✅ PDF saved successfully.");
     } catch (error) {
       console.error("🚨 Full PDF generation error:", error);
-      alert("Something went wrong generating the PDF. Please check the browser console for details.");
+      alert(
+        "Something went wrong generating the PDF. Please check the browser console for details."
+      );
     }
   };
 
