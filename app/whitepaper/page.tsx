@@ -7,28 +7,38 @@ export default function WhitepaperPage() {
     try {
       console.log("🟢 Starting PDF generation...");
 
-      // Dynamically import client-only libraries
+      // Dynamic import to avoid SSR issues
       const jsPDF = (await import("jspdf")).default;
       const html2canvas = (await import("html2canvas")).default;
-      console.log("✅ Libraries loaded successfully:", { jsPDF, html2canvas });
+      console.log("✅ Libraries loaded successfully");
 
       const element = document.getElementById("whitepaper-content");
       if (!element) {
         alert("Could not find whitepaper content on the page.");
-        console.error("❌ Missing element: #whitepaper-content");
         return;
       }
 
-      // Capture screenshot of whitepaper content
       console.log("🟡 Capturing element with html2canvas...");
       // @ts-ignore
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff", // Force white background (avoids transparent LAB errors)
+        onclone: (clonedDoc) => {
+          // Remove Tailwind's gradient backgrounds before render to prevent LAB parsing errors
+          clonedDoc.querySelectorAll("*").forEach((el) => {
+            const style = window.getComputedStyle(el);
+            if (style.backgroundImage.includes("gradient")) {
+              (el as HTMLElement).style.backgroundImage = "none";
+              (el as HTMLElement).style.backgroundColor = "#ffffff";
+            }
+          });
+        },
+      });
+
       console.log("✅ Canvas captured successfully.");
 
       const imgData = canvas.toDataURL("image/png");
-      console.log("🖼️ Image data generated.");
-
-      // Generate PDF
       const pdf = new jsPDF("p", "mm", "a4");
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
