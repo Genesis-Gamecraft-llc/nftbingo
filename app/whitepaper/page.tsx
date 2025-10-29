@@ -7,7 +7,6 @@ export default function WhitepaperPage() {
     try {
       console.log("🟢 Starting PDF generation...");
 
-      // Dynamically import client-only libraries
       const jsPDF = (await import("jspdf")).default;
       const html2canvas = (await import("html2canvas")).default;
       console.log("✅ Libraries loaded successfully");
@@ -20,24 +19,76 @@ export default function WhitepaperPage() {
 
       console.log("🟡 Capturing element with html2canvas...");
 
-      // Cast the options to `any` to bypass outdated type definitions
+      // Build options separately and cast to any so TS/Vercel don’t complain about `scale`
       const options: any = {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
         onclone: (clonedDoc: Document) => {
-          clonedDoc.querySelectorAll("*").forEach((el) => {
-            const style = window.getComputedStyle(el as HTMLElement);
-            if (style.backgroundImage.includes("gradient")) {
-              (el as HTMLElement).style.backgroundImage = "none";
-              (el as HTMLElement).style.backgroundColor = "#ffffff";
-            }
-          });
+          // Force ALL colors to safe RGB/hex for html2canvas (avoid lab()/lch()/p3)
+          const forceSafeColors = (nodeList: NodeListOf<Element>) => {
+            nodeList.forEach((node) => {
+              const el = node as HTMLElement;
+              const cs = (clonedDoc.defaultView || window).getComputedStyle(el);
+
+              // Remove any gradients
+              if (cs.backgroundImage && cs.backgroundImage.includes("gradient")) {
+                el.style.backgroundImage = "none";
+              }
+              // Backgrounds -> white if any unsupported color/gradient
+              if (
+                cs.backgroundColor.includes("lab(") ||
+                cs.backgroundColor.includes("lch(") ||
+                cs.backgroundColor.includes("color(")
+              ) {
+                el.style.backgroundColor = "#ffffff";
+              }
+
+              // Text color -> slate-700 equivalent
+              if (
+                cs.color.includes("lab(") ||
+                cs.color.includes("lch(") ||
+                cs.color.includes("color(")
+              ) {
+                el.style.color = "#374151"; // tailwind slate-700
+              }
+
+              // Borders -> light gray
+              const borderProps = [
+                "borderColor",
+                "borderTopColor",
+                "borderRightColor",
+                "borderBottomColor",
+                "borderLeftColor",
+              ] as const;
+
+              borderProps.forEach((prop) => {
+                const val = (cs as any)[prop] as string;
+                if (val && (val.includes("lab(") || val.includes("lch(") || val.includes("color("))) {
+                  (el.style as any)[prop] = "#e5e7eb"; // tailwind gray-200
+                }
+              });
+
+              // Also normalize gradient text (bg-clip-text trick)
+              if (cs.webkitBackgroundClip === "text" || cs.backgroundClip === "text") {
+                el.style.backgroundImage = "none";
+                // ensure readable text
+                el.style.color = "#111827"; // slate-900
+              }
+            });
+          };
+
+          // Apply to all elements inside the whitepaper container only
+          const container = clonedDoc.getElementById("whitepaper-content");
+          if (container) {
+            forceSafeColors(container.querySelectorAll("*"));
+            // Ensure the container is white
+            (container as HTMLElement).style.backgroundColor = "#ffffff";
+          }
         },
       };
 
       const canvas = await html2canvas(element, options);
-
       console.log("✅ Canvas captured successfully.");
 
       const imgData = canvas.toDataURL("image/png");
@@ -52,9 +103,7 @@ export default function WhitepaperPage() {
       console.log("✅ PDF saved successfully.");
     } catch (error) {
       console.error("🚨 Full PDF generation error:", error);
-      alert(
-        "Something went wrong generating the PDF. Please check the browser console for details."
-      );
+      alert("Something went wrong generating the PDF. Please check the browser console for details.");
     }
   };
 
@@ -105,9 +154,7 @@ export default function WhitepaperPage() {
             <li>Used for bingo game entry fees (USD-pegged pricing model).</li>
             <li>Rewards from winning games and special jackpot events.</li>
             <li>Governance participation for future platform updates.</li>
-            <li>
-              Staking system where NFT card owners earn passive rewards.
-            </li>
+            <li>Staking system where NFT card owners earn passive rewards.</li>
           </ul>
 
           <h2 className="text-2xl font-bold mt-10 mb-3 text-fuchsia-600">
