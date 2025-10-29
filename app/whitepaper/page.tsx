@@ -3,34 +3,44 @@
 import React from "react";
 
 export default function WhitepaperPage() {
-  // Handle download on click
   const handleDownload = async () => {
     try {
-      // Dynamically import client-side libraries (prevents SSR errors)
+      console.log("🟢 Starting PDF generation...");
+
+      // Dynamically import client-only libraries
       const jsPDF = (await import("jspdf")).default;
       const html2canvas = (await import("html2canvas")).default;
+      console.log("✅ Libraries loaded successfully:", { jsPDF, html2canvas });
 
       const element = document.getElementById("whitepaper-content");
       if (!element) {
-        alert("Could not find whitepaper content.");
+        alert("Could not find whitepaper content on the page.");
+        console.error("❌ Missing element: #whitepaper-content");
         return;
       }
 
-      // Capture the whitepaper section as an image
-      // @ts-ignore – html2canvas types don’t include 'scale'
-      const canvas = await html2canvas(element, { scale: 2 });
+      // Capture screenshot of whitepaper content
+      console.log("🟡 Capturing element with html2canvas...");
+      // @ts-ignore
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      console.log("✅ Canvas captured successfully.");
+
       const imgData = canvas.toDataURL("image/png");
+      console.log("🖼️ Image data generated.");
 
       // Generate PDF
       const pdf = new jsPDF("p", "mm", "a4");
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
+      console.log("📄 Adding image to PDF...");
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
       pdf.save("NFTBingo-Whitepaper.pdf");
+
+      console.log("✅ PDF saved successfully.");
     } catch (error) {
-      console.error("PDF download failed:", error);
-      alert("Something went wrong generating the PDF. Please try again.");
+      console.error("🚨 Full PDF generation error:", error);
+      alert("Something went wrong generating the PDF. Please check the browser console for details.");
     }
   };
 
@@ -120,13 +130,16 @@ export default function WhitepaperPage() {
           </h2>
           <ul className="list-disc list-inside space-y-2 mb-10">
             <li>
-              <strong>Phase 1:</strong> MVP launch with basic game engine and NFT minting.
+              <strong>Phase 1:</strong> MVP launch with basic game engine and
+              NFT minting.
             </li>
             <li>
-              <strong>Phase 2:</strong> Token launch, staking marketplace, and jackpot modes.
+              <strong>Phase 2:</strong> Token launch, staking marketplace, and
+              jackpot modes.
             </li>
             <li>
-              <strong>Phase 3:</strong> Mobile app release and cross-chain interoperability.
+              <strong>Phase 3:</strong> Mobile app release and cross-chain
+              interoperability.
             </li>
           </ul>
 
