@@ -12,79 +12,41 @@ export default function WhitepaperPage() {
       console.log("✅ Libraries loaded successfully");
 
       const element = document.getElementById("whitepaper-content");
-      if (!element) {
-        alert("Could not find whitepaper content on the page.");
-        return;
-      }
+      if (!element) return alert("Could not find whitepaper content.");
 
       console.log("🟡 Capturing element with html2canvas...");
 
-      // Build options separately and cast to any so TS/Vercel don’t complain about `scale`
+      // Fix colors before capture
       const options: any = {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
         onclone: (clonedDoc: Document) => {
-          // Force ALL colors to safe RGB/hex for html2canvas (avoid lab()/lch()/p3)
-          const forceSafeColors = (nodeList: NodeListOf<Element>) => {
-            nodeList.forEach((node) => {
-              const el = node as HTMLElement;
-              const cs = (clonedDoc.defaultView || window).getComputedStyle(el);
+          const nodes = clonedDoc.querySelectorAll("*");
+          nodes.forEach((node) => {
+            const el = node as HTMLElement;
+            const style = (clonedDoc.defaultView || window).getComputedStyle(el);
 
-              // Remove any gradients
-              if (cs.backgroundImage && cs.backgroundImage.includes("gradient")) {
-                el.style.backgroundImage = "none";
-              }
-              // Backgrounds -> white if any unsupported color/gradient
-              if (
-                cs.backgroundColor.includes("lab(") ||
-                cs.backgroundColor.includes("lch(") ||
-                cs.backgroundColor.includes("color(")
-              ) {
-                el.style.backgroundColor = "#ffffff";
-              }
+            // Replace gradient or LAB/LCH colors with safe RGB
+            const fixColor = (color: string, fallback: string) =>
+              color.includes("lab(") || color.includes("lch(") || color.includes("color(")
+                ? fallback
+                : color;
 
-              // Text color -> slate-700 equivalent
-              if (
-                cs.color.includes("lab(") ||
-                cs.color.includes("lch(") ||
-                cs.color.includes("color(")
-              ) {
-                el.style.color = "#374151"; // tailwind slate-700
-              }
+            el.style.backgroundColor = fixColor(style.backgroundColor, "#ffffff");
+            el.style.color = fixColor(style.color, "#111827");
+            el.style.borderColor = fixColor(style.borderColor, "#e5e7eb");
 
-              // Borders -> light gray
-              const borderProps = [
-                "borderColor",
-                "borderTopColor",
-                "borderRightColor",
-                "borderBottomColor",
-                "borderLeftColor",
-              ] as const;
+            if (style.backgroundImage.includes("gradient")) {
+              el.style.backgroundImage = "none";
+            }
 
-              borderProps.forEach((prop) => {
-                const val = (cs as any)[prop] as string;
-                if (val && (val.includes("lab(") || val.includes("lch(") || val.includes("color("))) {
-                  (el.style as any)[prop] = "#e5e7eb"; // tailwind gray-200
-                }
-              });
-
-              // Also normalize gradient text (bg-clip-text trick)
-              if (cs.webkitBackgroundClip === "text" || cs.backgroundClip === "text") {
-                el.style.backgroundImage = "none";
-                // ensure readable text
-                el.style.color = "#111827"; // slate-900
-              }
-            });
-          };
-
-          // Apply to all elements inside the whitepaper container only
-          const container = clonedDoc.getElementById("whitepaper-content");
-          if (container) {
-            forceSafeColors(container.querySelectorAll("*"));
-            // Ensure the container is white
-            (container as HTMLElement).style.backgroundColor = "#ffffff";
-          }
+            // Remove gradient text clip backgrounds
+            if (style.backgroundClip === "text" || style.webkitBackgroundClip === "text") {
+              el.style.backgroundImage = "none";
+              el.style.color = "#111827";
+            }
+          });
         },
       };
 
@@ -96,14 +58,13 @@ export default function WhitepaperPage() {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-      console.log("📄 Adding image to PDF...");
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
       pdf.save("NFTBingo-Whitepaper.pdf");
 
       console.log("✅ PDF saved successfully.");
-    } catch (error) {
-      console.error("🚨 Full PDF generation error:", error);
-      alert("Something went wrong generating the PDF. Please check the browser console for details.");
+    } catch (err) {
+      console.error("🚨 Full PDF generation error:", err);
+      alert("Something went wrong generating the PDF. Check console for details.");
     }
   };
 
@@ -133,23 +94,19 @@ export default function WhitepaperPage() {
           <p className="text-lg mb-6">
             <strong>NFTBingo</strong> is a blockchain-powered online gaming
             platform where players purchase and use{" "}
-            <strong>NFT-based bingo cards</strong> to compete in verifiably
-            fair, decentralized bingo games. The platform is built on{" "}
+            <strong>NFT-based bingo cards</strong> to compete in verifiably fair,
+            decentralized bingo games. The platform is built on{" "}
             <strong>Polygon</strong> for scalability, speed, and low fees.
           </p>
 
-          <h2 className="text-2xl font-bold mt-10 mb-3 text-pink-600">
-            Overview
-          </h2>
+          <h2 className="text-2xl font-bold mt-10 mb-3 text-pink-600">Overview</h2>
           <p className="mb-6">
             NFTBingo combines the fun and familiarity of bingo with blockchain
             transparency. Players acquire unique NFT cards to join live games,
             trade, or stake them for passive income.
           </p>
 
-          <h2 className="text-2xl font-bold mt-10 mb-3 text-indigo-600">
-            Token Utility
-          </h2>
+          <h2 className="text-2xl font-bold mt-10 mb-3 text-indigo-600">Token Utility</h2>
           <ul className="list-disc list-inside space-y-2 mb-6">
             <li>Used for bingo game entry fees (USD-pegged pricing model).</li>
             <li>Rewards from winning games and special jackpot events.</li>
@@ -167,19 +124,15 @@ export default function WhitepaperPage() {
             smart contract execution.
           </p>
 
-          <h2 className="text-2xl font-bold mt-10 mb-3 text-pink-600">
-            NFT Card Ownership
-          </h2>
+          <h2 className="text-2xl font-bold mt-10 mb-3 text-pink-600">NFT Card Ownership</h2>
           <p className="mb-6">
             Each NFT card has a unique on-chain pattern hash and limited supply.
-            Players may use their card in one game at a time or stake it to
-            allow others to play with it. Staked cards earn a share of winnings
-            based on staking terms.
+            Players may use their card in one game at a time or stake it to allow
+            others to play with it. Staked cards earn a share of winnings based on
+            staking terms.
           </p>
 
-          <h2 className="text-2xl font-bold mt-10 mb-3 text-indigo-600">
-            Revenue Model
-          </h2>
+          <h2 className="text-2xl font-bold mt-10 mb-3 text-indigo-600">Revenue Model</h2>
           <p className="mb-6">
             NFTBingo earns revenue through small fees on every game entry and
             payout. Additional income streams include NFT minting, staking
@@ -191,8 +144,8 @@ export default function WhitepaperPage() {
           </h2>
           <ul className="list-disc list-inside space-y-2 mb-10">
             <li>
-              <strong>Phase 1:</strong> MVP launch with basic game engine and
-              NFT minting.
+              <strong>Phase 1:</strong> MVP launch with basic game engine and NFT
+              minting.
             </li>
             <li>
               <strong>Phase 2:</strong> Token launch, staking marketplace, and
