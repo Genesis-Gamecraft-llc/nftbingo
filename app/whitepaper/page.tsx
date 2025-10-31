@@ -9,14 +9,11 @@ export default function WhitepaperPage() {
 
       const jsPDF = (await import("jspdf")).default;
       const html2canvas = (await import("html2canvas")).default;
-      console.log("✅ Libraries loaded successfully");
 
       const element = document.getElementById("whitepaper-content");
       if (!element) return alert("Could not find whitepaper content.");
 
-      console.log("🟡 Capturing element with html2canvas...");
-
-      // Fix colors before capture
+      // --- Clone & sanitize colors for html2canvas ---
       const options: any = {
         scale: 2,
         useCORS: true,
@@ -25,46 +22,90 @@ export default function WhitepaperPage() {
           const nodes = clonedDoc.querySelectorAll("*");
           nodes.forEach((node) => {
             const el = node as HTMLElement;
-            const style = (clonedDoc.defaultView || window).getComputedStyle(el);
+            const cs = (clonedDoc.defaultView || window).getComputedStyle(el);
 
-            // Replace gradient or LAB/LCH colors with safe RGB
-            const fixColor = (color: string, fallback: string) =>
-              color.includes("lab(") || color.includes("lch(") || color.includes("color(")
+            // Remove gradients or unsupported color functions
+            const clean = (color: string, fallback: string) =>
+              color.includes("lab(") ||
+              color.includes("lch(") ||
+              color.includes("color(")
                 ? fallback
                 : color;
 
-            el.style.backgroundColor = fixColor(style.backgroundColor, "#ffffff");
-            el.style.color = fixColor(style.color, "#111827");
-            el.style.borderColor = fixColor(style.borderColor, "#e5e7eb");
+            el.style.backgroundColor = clean(cs.backgroundColor, "#ffffff");
+            el.style.color = clean(cs.color, "#111827");
+            el.style.borderColor = clean(cs.borderColor, "#e5e7eb");
 
-            if (style.backgroundImage.includes("gradient")) {
+            if (cs.backgroundImage.includes("gradient")) {
               el.style.backgroundImage = "none";
             }
 
-            // Remove gradient text clip backgrounds
-            if (style.backgroundClip === "text" || style.webkitBackgroundClip === "text") {
+            if (
+              cs.backgroundClip === "text" ||
+              cs.webkitBackgroundClip === "text"
+            ) {
               el.style.backgroundImage = "none";
-              el.style.color = "#111827";
+              el.style.color = "#db2777"; // NFTBingo pink
             }
           });
         },
       };
 
+      // --- Capture image from HTML ---
       const canvas = await html2canvas(element, options);
-      console.log("✅ Canvas captured successfully.");
-
       const imgData = canvas.toDataURL("image/png");
+
+      // --- Multi-page logic ---
       const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // --- Header Branding ---
+      const addHeader = () => {
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(14);
+        pdf.setTextColor("#db2777"); // pink
+        pdf.text("NFTBingo Whitepaper", 15, 15);
+        try {
+          const logo = new Image();
+          logo.src = "/logoinprogress.png";
+          pdf.addImage(logo, "PNG", pageWidth - 40, 5, 25, 10);
+        } catch {
+          /* ignore if image fails to load */
+        }
+      };
+
+      addHeader();
+      pdf.addImage(imgData, "PNG", 0, 25, imgWidth, imgHeight - 10);
+      heightLeft -= pageHeight - 25;
+
+      // --- Add pages dynamically if content overflows ---
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        addHeader();
+        pdf.addImage(
+          imgData,
+          "PNG",
+          0,
+          position + 25,
+          imgWidth,
+          imgHeight - 10
+        );
+        heightLeft -= pageHeight - 25;
+      }
+
       pdf.save("NFTBingo-Whitepaper.pdf");
-
       console.log("✅ PDF saved successfully.");
     } catch (err) {
-      console.error("🚨 Full PDF generation error:", err);
-      alert("Something went wrong generating the PDF. Check console for details.");
+      console.error("🚨 PDF generation failed:", err);
+      alert("Something went wrong while creating your PDF. Check console for details.");
     }
   };
 
