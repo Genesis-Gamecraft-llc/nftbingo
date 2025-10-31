@@ -4,21 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 export default function Navbar() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const navItems = [
-  { name: "Home", href: "/" },
-  { name: "About", href: "/about" },
-  { name: "Whitepaper", href: "/whitepaper" },
-  { name: "Tokenomics", href: "/tokenomics" },
-  { name: "Roadmap", href: "/roadmap" },
-  { name: "Community", href: "/community" },
-  { name: "Join", href: "/join" },
-];
-
+    { name: "Home", href: "/" },
+    { name: "About", href: "/about" },
+    { name: "Whitepaper", href: "/whitepaper" },
+    { name: "Tokenomics", href: "/tokenomics" },
+    { name: "Roadmap", href: "/roadmap" },
+    { name: "Community", href: "/community" },
+    { name: "Join", href: "/join" },
+  ];
 
   return (
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
@@ -51,9 +51,7 @@ export default function Navbar() {
               {item.name}
             </Link>
           ))}
-          <button className="whitespace-nowrap bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-5 py-2 rounded-lg font-semibold hover:shadow-md transition-all">
-            Connect Wallet
-          </button>
+          <ConnectButton />
         </div>
 
         {/* Mobile Menu Button */}
@@ -84,9 +82,7 @@ export default function Navbar() {
                 {item.name}
               </Link>
             ))}
-            <button className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white px-5 py-2 rounded-lg font-semibold hover:shadow-md whitespace-nowrap">
-              Connect Wallet
-            </button>
+            <ConnectButton />
           </div>
         </div>
       )}
