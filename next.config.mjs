@@ -1,13 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Disable Turbopack on Vercel and locally
-  turbopack: false,
+  // Disable Turbopack (must be an object, not a boolean)
+  turbopack: {},
 
   webpack: (config) => {
-    // Required so @napi-rs/canvas works with Webpack
+    // Required for @napi-rs/canvas to work on server bundles
     config.externals.push({
       "@napi-rs/canvas": "commonjs @napi-rs/canvas",
     });
+
     return config;
   },
 };
