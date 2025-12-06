@@ -18,10 +18,24 @@ export const CELL_H = 320; // 1600 / 5
 // We will read these from environment variables in Next.js
 // instead of hard-coding secrets into the repo.
 
-export const RPC_URL =
-  process.env.NEXT_PUBLIC_POLYGON_AMOY_RPC_URL ??
-  "https://polygon-amoy.g.alchemy.com/v2/YOUR_API_KEY_HERE";
+// ---- Env-configured RPC + Contract ----
 
-export const CONTRACT_ADDRESS =
-  process.env.NEXT_PUBLIC_NFTBINGO_CONTRACT_ADDRESS ??
-  "0xA5bfD2ee0413EbC7c89d1fCC9BB468daAD6CD1d2";
+const rpcUrl = process.env.NEXT_PUBLIC_POLYGON_AMOY_RPC_URL;
+const contractAddr = process.env.NEXT_PUBLIC_NFTBINGO_CONTRACT_ADDRESS;
+
+if (!rpcUrl) {
+  throw new Error(
+    "❌ Missing NEXT_PUBLIC_POLYGON_AMOY_RPC_URL. Define it in .env.local AND in Vercel Project Settings."
+  );
+}
+
+if (!contractAddr) {
+  throw new Error(
+    "❌ Missing NEXT_PUBLIC_NFTBINGO_CONTRACT_ADDRESS. Define it in .env.local AND in Vercel Project Settings."
+  );
+}
+
+// Export as definite strings so TypeScript is happy
+export const RPC_URL: string = rpcUrl;
+export const CONTRACT_ADDRESS: string = contractAddr;
+
