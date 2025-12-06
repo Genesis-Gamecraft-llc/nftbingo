@@ -1,14 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    turbopack: {},
-  // We are already using Webpack via: `next dev --webpack`
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      // Prevent webpack from trying to bundle the native @napi-rs/canvas binary
-      config.externals = config.externals || [];
-      config.externals.push("@napi-rs/canvas");
-    }
+  // Disable Turbopack on Vercel and locally
+  turbopack: false,
 
+  webpack: (config) => {
+    // Required so @napi-rs/canvas works with Webpack
+    config.externals.push({
+      "@napi-rs/canvas": "commonjs @napi-rs/canvas",
+    });
     return config;
   },
 };
