@@ -1,83 +1,85 @@
 // lib/cardGenerator/generateImage.ts
-
+import path from "path";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import {
   CARD_W,
   CARD_H,
   GRID_X,
   GRID_Y,
+  GRID_W,
+  GRID_H,
   CELL_W,
   CELL_H,
 } from "./config";
-import path from "path";
 
 /**
- * Generate a bingo card image as a PNG buffer.
+ * Render a full NFTBingo card image as a PNG buffer.
  *
- * - Uses background PNGs from /public/backgrounds/series1/bg{backgroundId}.png
- * - If that specific background is missing, falls back to bg0.png
- * - Draws a 5x5 grid of numbers
- * - Does NOT draw anything where the number is 0 (so the background logo shows through)
+ * - `numbers` is a flat array of 25 ints from the contract (row-major: 5 rows of 5).
+ * - `backgroundId` selects /public/backgrounds/series1/bg{backgroundId}.png
+ *   and falls back to bg0.png if that file doesn’t exist.
  */
 export async function generateCardImage(
   numbers: number[],
   backgroundId: number
 ): Promise<Buffer> {
-  // Create canvas & context
+  // Sanity check so we don’t silently draw garbage
+  if (!Array.isArray(numbers) || numbers.length !== 25) {
+    throw new Error(`Expected 25 numbers, got ${numbers.length}`);
+  }
+
+  // 1) Canvas + context
   const canvas = createCanvas(CARD_W, CARD_H);
   const ctx = canvas.getContext("2d");
 
-  // ---- Load background ----
-  const backgroundsDir = path.join(process.cwd(), "public", "backgrounds");
-  const specificBgPath = path.join(
-    backgroundsDir,
-    "series1",
-    `bg${backgroundId}.png`
+  // 2) Load background (Series 1)
+  const backgroundsDir = path.join(
+    process.cwd(),
+    "public",
+    "backgrounds",
+    "series1"
   );
-  const fallbackBgPath = path.join(backgroundsDir, "series1", "bg0.png");
 
-  let backgroundImg;
+  const requestedPath = path.join(backgroundsDir, `bg${backgroundId}.png`);
+  const fallbackPath = path.join(backgroundsDir, "bg0.png");
+
+  let bgImage;
   try {
-    backgroundImg = await loadImage(specificBgPath);
-  } catch (err) {
+    bgImage = await loadImage(requestedPath);
+  } catch {
     console.warn(
-      `⚠️ Background bg${backgroundId}.png not found, falling back to bg0.png`
+      `⚠️  Background bg${backgroundId}.png not found. Falling back to bg0.png`
     );
-    backgroundImg = await loadImage(fallbackBgPath);
+    bgImage = await loadImage(fallbackPath);
   }
 
-  // Draw background to full canvas
-  ctx.drawImage(backgroundImg, 0, 0, CARD_W, CARD_H);
+  // Draw full-card background
+  ctx.drawImage(bgImage, 0, 0, CARD_W, CARD_H);
 
-  // ---- Draw Numbers Grid ----
+  // 3) Draw numbers using the Photoshop grid measurements
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  // Use the standard font (no custom font registration)
-  ctx.font = "bold 140px sans-serif";
+  ctx.font = "bold 150px sans-serif"; // matches the original generator
   ctx.fillStyle = "#000000";
 
-  // Convert numbers into 5×5 grid
-  const grid: number[][] = [];
-  for (let i = 0; i < 5; i++) {
-    grid.push(numbers.slice(i * 5, i * 5 + 5));
-  }
-
-  // Draw each number cell
   for (let row = 0; row < 5; row++) {
     for (let col = 0; col < 5; col++) {
-      const number = grid[row][col];
+      // FREE center – logo lives there on the background
+      if (row === 2 && col === 2) continue;
 
-      // If number is 0, we treat it as a FREE/center space and draw nothing,
-      // letting the background (with the logo) show through.
-      if (number === 0) continue;
+      const idx = row * 5 + col;
+      const value = numbers[idx];
 
-      const x = GRID_X + col * CELL_W + CELL_W / 2;
-      const y = GRID_Y + row * CELL_H + CELL_H / 2;
+      // If the contract encodes FREE as 0, skip zero as well.
+      if (value === 0) continue;
 
-      ctx.fillText(number.toString(), x, y);
+      const centerX = GRID_X + col * CELL_W + CELL_W / 2;
+      const centerY = GRID_Y + row * CELL_H + CELL_H / 2;
+
+      ctx.fillText(String(value), centerX, centerY);
     }
   }
 
-  // ---- Return PNG Buffer ----
+  // 4) Return PNG buffer for the API route
   return canvas.toBuffer("image/png");
 }
