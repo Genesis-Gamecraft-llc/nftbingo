@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+    turbopack: {},
   // We are already using Webpack via: `next dev --webpack`
   webpack: (config, { isServer }) => {
     if (isServer) {
