@@ -28,7 +28,7 @@ export default function MintNftBingoCardsPage() {
     try {
       if (!window.ethereum) {
         setStatus("error");
-        setStatusMessage("No wallet detected. Please install MetaMask.");
+        setStatusMessage("No wallet detected. Please connect your wallet.");
         return;
       }
 
@@ -65,7 +65,7 @@ export default function MintNftBingoCardsPage() {
 
       const tx = await contract.mintCard(seriesId, {
         // fixed gas limit so Amoy’s flaky estimation doesn’t kill us
-        gasLimit: 250000,
+        gasLimit: 1000000,
       });
 
       setStatusMessage("Transaction sent. Waiting for confirmation…");
