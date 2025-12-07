@@ -5,99 +5,129 @@ import { BrowserProvider, Contract } from "ethers";
 import nftBingoABI from "@/lib/nftBingoABI.json";
 import { CONTRACT_ADDRESS } from "@/lib/cardGenerator/config";
 
-const POLYGON_AMOY_CHAIN_ID_DEC = 80002;
-const POLYGON_AMOY_CHAIN_ID_HEX = "0x13882"; // 80002 in hex
+// Use BigInt() explicitly so we don't rely on bigint literals
+const AMOY_CHAIN_ID = BigInt(80002);
 
 export default function MintWithEthers() {
   const [isMinting, setIsMinting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleMint = async () => {
-    try {
-      setErrorMsg(null);
+    setError(null);
+    setTxHash(null);
 
-      if (typeof window === "undefined" || !(window as any).ethereum) {
-        setErrorMsg("No wallet found. Install MetaMask or a compatible wallet.");
-        return;
+    try {
+      if (typeof window === "undefined") {
+        throw new Error("Window is not available.");
       }
 
-      const ethereum = (window as any).ethereum;
+      const anyWindow = window as any;
 
-      // 1) Create provider from injected wallet
-      const provider = new BrowserProvider(ethereum);
+      if (!anyWindow.ethereum) {
+        throw new Error("Wallet not found. Please install MetaMask.");
+      }
 
-      // 2) Ensure we are on Polygon Amoy testnet
-      const network = await provider.getNetwork();
-      const currentChainId = Number(network.chainId.toString());
-
-      console.log("Current network:", {
-        chainId: currentChainId,
-        name: network.name,
+      // 1) Make sure we have permission to use the wallet
+      await anyWindow.ethereum.request({
+        method: "eth_requestAccounts",
       });
 
-      if (currentChainId !== POLYGON_AMOY_CHAIN_ID_DEC) {
-        console.log("Switching chain to Polygon Amoy…");
-        await ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: POLYGON_AMOY_CHAIN_ID_HEX }],
-        });
+      // 2) Build provider from MetaMask
+      const provider = new BrowserProvider(anyWindow.ethereum);
+
+      // 3) Check we are on Polygon Amoy
+      const network = await provider.getNetwork();
+      if (network.chainId !== AMOY_CHAIN_ID) {
+        throw new Error(
+          "Wrong network. Please switch MetaMask to Polygon Amoy (chainId 80002)."
+        );
       }
 
+      // 4) Get signer & contract
       const signer = await provider.getSigner();
-      const signerAddress = await signer.getAddress();
-
-      console.log("Using signer:", signerAddress);
-      console.log("Contract address:", CONTRACT_ADDRESS);
-
-      // 3) Connect to the contract
       const contract = new Contract(CONTRACT_ADDRESS, nftBingoABI, signer);
 
-      // 4) Call mintCard(seriesId)
+      // Your contract: mintCard(uint256 seriesId)
+      const seriesId = BigInt(1);
+
       setIsMinting(true);
 
-      // If your contract expects something other than `1`, change this.
-      const seriesId = BigInt(1); // or BigInt("1")
+      // Optional: gas estimation (just for logging)
+      try {
+        const estimate = await contract.mintCard.estimateGas(seriesId);
+        console.log("Estimated gas for mintCard:", estimate.toString());
+      } catch (gasErr) {
+        console.error("Gas estimation failed for mintCard:", gasErr);
+        // Continue anyway with explicit gasLimit
+      }
 
-      console.log("Calling mintCard with seriesId:", seriesId);
+      // 5) Send the tx with a manual gasLimit
+      const tx = await contract.mintCard(seriesId, {
+        gasLimit: BigInt(500_000),
+      });
 
-      const tx = await contract.mintCard(seriesId);
-      console.log("✅ Mint tx sent:", tx.hash);
+      console.log("Mint tx sent:", tx.hash);
+      setTxHash(tx.hash);
 
       const receipt = await tx.wait();
-      console.log("✅ Mint confirmed:", receipt);
+      console.log("Mint tx confirmed:", receipt);
     } catch (err: any) {
-      console.error("❌ Mint failed:", err);
+      console.error("❌ Mint error (ethers):", err);
 
-      const friendly =
-        err?.reason ||
-        err?.data?.message ||
-        err?.message ||
-        "Mint failed. Check console for details.";
-
-      setErrorMsg(friendly);
+      if (err?.code === "ACTION_REJECTED") {
+        setError("Transaction rejected in wallet.");
+      } else if (err?.info?.error?.message) {
+        setError(err.info.error.message);
+      } else if (err?.error?.message) {
+        setError(err.error.message);
+      } else if (err?.shortMessage) {
+        setError(err.shortMessage);
+      } else if (err?.message) {
+        setError(err.message);
+      } else {
+        setError("Unknown error while sending transaction.");
+      }
     } finally {
       setIsMinting(false);
     }
   };
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-4">
       <button
-        type="button"
         onClick={handleMint}
         disabled={isMinting}
-        className="px-8 py-3 rounded-full bg-pink-500 text-white font-semibold shadow-md hover:bg-pink-600 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="
+          px-8 py-3 rounded-full
+          bg-pink-600 hover:bg-pink-500
+          text-white font-semibold text-lg
+          shadow-md disabled:opacity-60 disabled:cursor-not-allowed
+          transition-colors
+        "
       >
         {isMinting ? "Minting…" : "Mint NFTBingo Card"}
       </button>
 
-      {errorMsg && (
-        <p className="text-sm text-red-500 text-center max-w-md">{errorMsg}</p>
+      {txHash && (
+        <p className="text-sm text-green-600">
+          Mint transaction submitted:{" "}
+          <a
+            href={`https://amoy.polygonscan.com/tx/${txHash}`}
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            View on Polygonscan
+          </a>
+        </p>
       )}
 
-      <p className="text-xs text-slate-400 text-center max-w-md">
-        Make sure your wallet is connected and on the Polygon Amoy testnet.
-      </p>
+      {error && (
+        <p className="text-sm text-red-600 text-center max-w-xl">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
