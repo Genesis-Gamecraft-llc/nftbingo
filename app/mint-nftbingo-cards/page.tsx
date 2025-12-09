@@ -188,10 +188,9 @@ export default function MintNFTBingoCardsPage() {
             Next — Metadata &amp; Secondary Markets
           </h2>
           <p className="text-center text-gray-600 max-w-2xl mx-auto">
-            With minting and card rendering wired up, the next steps will be
-            wiring your metadata endpoint so marketplaces like OpenSea or
-            Rarible show the same image, and polishing the UX around minted
-            cards.
+            This mint process is currently set on the Polygon Amoy test network.
+            After minting, you can view your NFTBingo cards in your wallet, but 
+            they are test network NFTs only and will not be available for gameplay.
           </p>
         </div>
       </section>
