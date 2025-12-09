@@ -19,20 +19,20 @@ export default function Home() {
         </h1>
         <p className="relative max-w-2xl mx-auto text-lg opacity-90 z-10">
           The world’s first decentralized bingo platform on{" "}
-          <span className="font-bold text-yellow-200">Polygon</span> — where
+          <span className="font-bold text-yellow-200">Polygon</span>, where
           every card is an NFT and every game is provably fair.
         </p>
 
         <div className="relative mt-10 flex flex-wrap justify-center gap-4 z-10">
           <a
-            href="#enter"
+            href="/join"
             className="rounded-xl bg-white text-pink-600 font-semibold px-8 py-4 shadow hover:bg-slate-100"
           >
-            Enter App
+            Join Us
           </a>
           <a
             href="/whitepaper"
-            className="rounded-xl border-2 border-white text-white font-semibold px-8 py-4 hover:bg-white/10"
+            className="rounded-xl bg-white text-pink-600 font-semibold px-8 py-4 shadow hover:bg-slate-100"
           >
             Read Whitepaper
           </a>
@@ -45,10 +45,10 @@ export default function Home() {
           NFT-Powered Bingo with Real Rewards
         </h2>
         <p className="text-lg text-slate-600 leading-relaxed">
-          NFTBingo combines the fun of classic bingo with the transparency of
-          blockchain. Buy NFT cards, join live games, and win crypto or NFT
-          prizes. Built on Polygon for low fees, fast transactions, and full
-          decentralization.
+          NFTBingo combines the fun of classic bingo with the transparency and
+          ownership of blockchain NFTs. Buy NFT cards, join live games, and win 
+          crypto or NFT prizes. Built on Polygon for low fees, fast transactions,
+          and full decentralization.
         </p>
       </section>
 
@@ -57,21 +57,22 @@ export default function Home() {
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-xl font-semibold mb-2">Ownable Cards</h3>
           <p className="text-slate-600">
-            Each card is a unique NFT you can trade, stake, or lend to other
-            players.
+            Each card is a unique NFT you can play, sell, or stake for other
+            players to use.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-xl font-semibold mb-2">USD-Pegged Buy-Ins</h3>
           <p className="text-slate-600">
-            Game entries auto-adjust based on token value using DEX price
-            snapshots.
+            Game entry fees are set and auto-adjust based on token value 
+            using DEX price snapshots.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-xl font-semibold mb-2">Transparent Payouts</h3>
           <p className="text-slate-600">
-            Winnings distributed instantly in BINGO Token, wETH, wBTC, or NFTs.
+            Winnings distributed automatically in BINGO Token, ETH, BTC, NFTs
+            or other prizes.
           </p>
         </div>
       </section>
