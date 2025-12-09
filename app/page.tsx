@@ -57,22 +57,19 @@ export default function Home() {
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-xl font-semibold mb-2">Ownable Cards</h3>
           <p className="text-slate-600">
-            Each card is a unique NFT you can play, sell, or stake for other
-            players to use.
+            Each card is a unique NFT you can play, sell, or stake for other players to use and claim a portion of the winnings.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-xl font-semibold mb-2">USD-Pegged Buy-Ins</h3>
           <p className="text-slate-600">
-            Game entry fees are set and auto-adjust based on token value 
-            using DEX price snapshots.
+            Use our native BINGO Token for game entry fees set to USD prices which auto-adjust based on token value.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-xl font-semibold mb-2">Transparent Payouts</h3>
           <p className="text-slate-600">
-            Winnings distributed automatically in BINGO Token, ETH, BTC, NFTs
-            or other prizes.
+            Winnings distributed automatically, verifiable on chain, in BINGO Token, ETH, BTC, NFTs or other prizes.
           </p>
         </div>
       </section>
