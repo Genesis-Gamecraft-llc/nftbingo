@@ -5,217 +5,195 @@ import { ethers } from "ethers";
 import nftBingoABI from "@/lib/nftBingoABI.json";
 import { CONTRACT_ADDRESS } from "@/lib/cardGenerator/config";
 
-declare global {
-  interface Window {
-    ethereum?: any;
-  }
-}
+const AMOY_CHAIN_ID = 80002;
 
-type MintStatus = "idle" | "wallet" | "pending" | "success" | "error";
-
-export default function MintNftBingoCardsPage() {
-  const [isMinting, setIsMinting] = useState(false);
-  const [status, setStatus] = useState<MintStatus>("idle");
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+export default function MintNFTBingoCardsPage() {
+  const [status, setStatus] = useState<string>("");
+  const [isMinting, setIsMinting] = useState<boolean>(false);
   const [mintedTokenId, setMintedTokenId] = useState<number | null>(null);
 
-  const handleMint = async () => {
-    // reset any previous state
+  async function handleMint() {
+    if (typeof window === "undefined" || !(window as any).ethereum) {
+      setStatus("No wallet found. Please install MetaMask.");
+      return;
+    }
+
+    setStatus("Connecting wallet…");
+    setIsMinting(true);
     setMintedTokenId(null);
-    setStatus("idle");
-    setStatusMessage(null);
 
     try {
-      if (!window.ethereum) {
-        setStatus("error");
-        setStatusMessage("No wallet detected. Please connect your wallet.");
+      const browserProvider = new ethers.BrowserProvider(
+        (window as any).ethereum
+      );
+
+      // Make sure we're on Polygon Amoy
+      const network = await browserProvider.getNetwork();
+      const currentChainId = Number(network.chainId);
+      if (currentChainId !== AMOY_CHAIN_ID) {
+        setStatus("Please switch your wallet to Polygon Amoy testnet.");
+        setIsMinting(false);
         return;
       }
 
-      setIsMinting(true);
-      setStatus("wallet");
-      setStatusMessage("Opening your wallet…");
-
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const network = await provider.getNetwork();
-
-      // Polygon Amoy chainId is 80002
-      const chainIdNum = Number(network.chainId);
-      if (chainIdNum !== 80002) {
-        setStatus("error");
-        setStatusMessage("Please switch your wallet to the Polygon Amoy testnet.");
-        return;
-      }
-
-      const signer = await provider.getSigner();
-      const userAddress = (await signer.getAddress()).toLowerCase();
-
+      const signer = await browserProvider.getSigner();
       const contract = new ethers.Contract(
         CONTRACT_ADDRESS,
         nftBingoABI as any,
         signer
       );
 
-      const seriesId = 1; // Series 1 for now
+      const seriesId = BigInt(1); // your only series for now
 
-      setStatus("pending");
-      setStatusMessage(
-        "Sending mint transaction… please confirm in your wallet."
-      );
+      // ---------- Gas estimation ----------
+      let gasLimitOverride: bigint | undefined = undefined;
 
-      const tx = await contract.mintCard(seriesId, {
-        // fixed gas limit so Amoy’s flaky estimation doesn’t kill us
-        gasLimit: 1000000,
-      });
-
-      setStatusMessage("Transaction sent. Waiting for confirmation…");
-      const receipt = await tx.wait();
-
-      console.log("✅ Mint tx receipt:", receipt);
-
-      // ---- Extract tokenId from TransferSingle event ----
-      let newTokenId: number | null = null;
-
-      for (const log of receipt.logs ?? []) {
-  try {
-    const parsed: any = contract.interface.parseLog({
-      topics: [...log.topics],
-      data: log.data,
-    });
-
-    // TypeScript worry fix: make sure we bail if parsed is falsy
-    if (!parsed || parsed.name !== "TransferSingle") continue;
-
-    const from = (parsed.args.from as string).toLowerCase();
-    const to = (parsed.args.to as string).toLowerCase();
-    const id = parsed.args.id as bigint | number;
-
-    if (
-      from === ethers.ZeroAddress.toLowerCase() &&
-      to === userAddress
-    ) {
-      newTokenId = Number(id);
-      break;
-    }
-  } catch {
-    // not a TransferSingle we understand – skip
-  }
-}
-
-      if (newTokenId == null) {
-        // Mint probably succeeded but we couldn't decode the id
-        setStatus("success");
-        setStatusMessage(
-          "Mint appears to have succeeded, but I couldn’t read the new token ID. Please check your wallet or PolygonScan."
+      try {
+        const estimatedGas: bigint = await contract.mintCard.estimateGas(
+          seriesId
         );
-        return;
+        // bump by 20% to be safe
+        const bumpNumerator = BigInt(12);
+        const bumpDenominator = BigInt(10);
+        gasLimitOverride =
+          (estimatedGas * bumpNumerator) / bumpDenominator;
+
+        console.log(
+          "[mint] Estimated gas:",
+          estimatedGas.toString(),
+          "Using gasLimit override:",
+          gasLimitOverride.toString()
+        );
+      } catch (gasErr) {
+        console.warn("[mint] Gas estimation failed, sending without override");
+        console.warn(gasErr);
       }
 
-      setMintedTokenId(newTokenId);
-      setStatus("success");
-      setStatusMessage(`Mint successful! Your new card is #${newTokenId}.`);
-    } catch (err: any) {
-      console.error("❌ Mint error (ethers):", err);
+      setStatus("Sending transaction…");
 
-      let message = "Unexpected error while minting. Please try again.";
+      const tx = await contract.mintCard(
+        seriesId,
+        gasLimitOverride ? { gasLimit: gasLimitOverride } : {}
+      );
 
-      if (err?.code === "ACTION_REJECTED") {
-        message = "Transaction rejected in wallet.";
-      } else if (typeof err?.message === "string") {
-        if (err.message.includes("Internal JSON-RPC error")) {
-          message =
-            "The Amoy testnet RPC had an internal error. Wait a few seconds and try again — that testnet has been flaky.";
-        } else {
-          message = err.message;
+      console.log("[mint] Tx sent:", tx.hash);
+      setStatus("Transaction sent. Waiting for confirmation…");
+
+      const receipt = await tx.wait();
+      console.log("[mint] Tx confirmed:", receipt);
+
+      // ---------- Parse logs to find minted tokenId ----------
+      const iface = new ethers.Interface(nftBingoABI as any);
+      let newTokenId: number | null = null;
+
+      for (const log of receipt.logs) {
+        try {
+          const parsed = iface.parseLog(log);
+
+          // IMPORTANT: parsed may be null
+          if (!parsed) continue;
+
+          if (parsed.name === "TransferSingle") {
+            // ERC-1155 TransferSingle(operator, from, to, id, value)
+            const idBig = parsed.args["id"] as bigint;
+            newTokenId = Number(idBig);
+            break;
+          }
+        } catch (e) {
+          // Not our event, ignore
         }
       }
 
-      setStatus("error");
-      setStatusMessage(message);
+      if (newTokenId === null) {
+        console.warn(
+          "[mint] Mint succeeded but tokenId could not be parsed from logs"
+        );
+        setStatus("Mint succeeded, but token ID could not be parsed.");
+      } else {
+        console.log("[mint] Mint successful, tokenId =", newTokenId);
+        setStatus(`Mint successful! Token #${newTokenId}`);
+        setMintedTokenId(newTokenId);
+      }
+    } catch (err: any) {
+      console.error("[mint] Mint error:", err);
+
+      // Try to show the raw RPC error if present
+      const rawMsg =
+        err?.error?.message ||
+        err?.data?.message ||
+        err?.message ||
+        "Unknown error while sending transaction.";
+
+      setStatus(`Transaction failed: ${rawMsg}`);
     } finally {
       setIsMinting(false);
     }
-  };
+  }
 
   return (
-    <main className="flex flex-col items-center px-4 py-16">
-      {/* Page header */}
-      <section className="max-w-4xl w-full text-center mb-10">
-        <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+    <main className="min-h-screen bg-white">
+      <section className="max-w-4xl mx-auto py-16 px-4">
+        <h1 className="text-4xl font-extrabold text-center mb-4 text-gray-900">
           Mint NFTBingo Cards
         </h1>
-        <p className="text-slate-600 text-sm sm:text-base max-w-2xl mx-auto">
+        <p className="text-center text-gray-600 mb-10 max-w-2xl mx-auto">
           Mint a random, on-chain NFTBingo card on the Polygon Amoy test
           network. Each click mints a new card and then renders the full PNG
           using the numbers and background stored in your smart contract.
         </p>
-      </section>
 
-      {/* Mint card */}
-      <section className="max-w-3xl w-full bg-white rounded-3xl shadow-lg px-6 sm:px-10 py-10 border border-slate-100">
-        <h2 className="text-2xl sm:text-3xl font-semibold text-center mb-4">
-          Step 1 — Mint &amp; Generate Your Card
-        </h2>
+        <div className="bg-white rounded-3xl shadow-lg px-8 py-10 mb-10 border border-pink-100">
+          <h2 className="text-2xl font-bold text-center mb-2">
+            Step 1 — Mint &amp; Generate Your Card
+          </h2>
+          <p className="text-center text-gray-600 mb-6">
+            Clicking this button will mint a brand new NFTBingo card to your
+            connected wallet, then render the card using the on-chain numbers.
+            There is no preview step — each mint is final.
+          </p>
 
-        <p className="text-slate-600 text-sm sm:text-base text-center mb-8 max-w-2xl mx-auto">
-          Clicking this button will mint a brand new NFTBingo card to your
-          connected wallet, then render the card using the on-chain numbers.
-          There is no preview step — each mint is final.
-        </p>
+          <div className="flex flex-col items-center gap-4">
+            <button
+              onClick={handleMint}
+              disabled={isMinting}
+              className="px-8 py-3 rounded-full bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white font-semibold shadow-md transition"
+            >
+              {isMinting ? "Minting…" : "Mint NFTBingo Card"}
+            </button>
 
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={handleMint}
-            disabled={isMinting}
-            className={`px-8 py-3 rounded-full text-white font-semibold shadow-md transition-transform ${
-              isMinting
-                ? "bg-pink-300 cursor-not-allowed"
-                : "bg-pink-500 hover:bg-pink-600 hover:-translate-y-0.5"
-            }`}
-          >
-            {isMinting ? "Minting…" : "Mint NFTBingo Card"}
-          </button>
+            {status && (
+              <p className="text-sm text-gray-700 text-center max-w-md">
+                {status}
+              </p>
+            )}
+          </div>
+
+          {mintedTokenId !== null && (
+            <div className="mt-8 flex flex-col items-center">
+              <h3 className="font-semibold mb-2">
+                Latest Minted Card (Token #{mintedTokenId})
+              </h3>
+              {/* Uses your existing card-image API */}
+              <img
+                src={`/api/card-image/${mintedTokenId}`}
+                alt={`NFTBingo card #${mintedTokenId}`}
+                className="w-full max-w-md rounded-xl shadow"
+              />
+            </div>
+          )}
         </div>
 
-        {/* Status message under the button */}
-        {statusMessage && (
-          <p
-            className={`mt-4 text-sm text-center ${
-              status === "error"
-                ? "text-red-500"
-                : status === "success"
-                ? "text-green-600"
-                : "text-slate-500"
-            }`}
-          >
-            {statusMessage}
+        <div className="bg-gray-50 rounded-3xl px-8 py-8 border border-gray-100">
+          <h2 className="text-xl font-bold mb-2 text-center">
+            Next — Metadata &amp; Secondary Markets
+          </h2>
+          <p className="text-center text-gray-600 max-w-2xl mx-auto">
+            With minting and card rendering wired up, the next steps will be
+            wiring your metadata endpoint so marketplaces like OpenSea or
+            Rarible show the same image, and polishing the UX around minted
+            cards.
           </p>
-        )}
-
-        {/* Minted card preview */}
-        {mintedTokenId !== null && (
-          <div className="mt-10 flex justify-center">
-            <img
-              src={`/api/card-image/${mintedTokenId}`}
-              alt={`NFTBingo Card #${mintedTokenId}`}
-              className="w-full max-w-md rounded-2xl shadow-xl border border-slate-200"
-            />
-          </div>
-        )}
-      </section>
-
-      {/* Next steps blurb */}
-      <section className="max-w-3xl w-full mt-10 text-center">
-        <h3 className="text-xl font-semibold mb-2">
-          Next — Metadata &amp; Secondary Markets
-        </h3>
-        <p className="text-slate-600 text-sm sm:text-base">
-          With minting and card rendering wired up, the next steps will be
-          wiring your metadata endpoint (so marketplaces like OpenSea or
-          Rarible show the same image) and then polishing the UX around minted
-          cards.
-        </p>
+        </div>
       </section>
     </main>
   );
