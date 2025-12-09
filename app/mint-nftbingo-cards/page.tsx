@@ -139,7 +139,7 @@ export default function MintNFTBingoCardsPage() {
         <p className="text-center text-gray-600 mb-10 max-w-2xl mx-auto">
           Mint a random, on-chain NFTBingo card on the Polygon Amoy test
           network. Each click mints a new card and then renders the full PNG
-          using the numbers and background stored in your smart contract.
+          using the numbers and background stored in our smart contract.
         </p>
 
         <div className="bg-white rounded-3xl shadow-lg px-8 py-10 mb-10 border border-pink-100">
@@ -149,7 +149,7 @@ export default function MintNFTBingoCardsPage() {
           <p className="text-center text-gray-600 mb-6">
             Clicking this button will mint a brand new NFTBingo card to your
             connected wallet, then render the card using the on-chain numbers.
-            There is no preview step — each mint is final.
+            There is no preview step. Once you accept the transaction, your mint is final.
           </p>
 
           <div className="flex flex-col items-center gap-4">
@@ -185,7 +185,7 @@ export default function MintNFTBingoCardsPage() {
 
         <div className="bg-gray-50 rounded-3xl px-8 py-8 border border-gray-100">
           <h2 className="text-xl font-bold mb-2 text-center">
-            Next — Metadata &amp; Secondary Markets
+            Polygon Amoy Test Network Notice
           </h2>
           <p className="text-center text-gray-600 max-w-2xl mx-auto">
             This mint process is currently set on the Polygon Amoy test network.
