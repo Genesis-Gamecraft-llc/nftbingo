@@ -15,7 +15,7 @@ export default function Home() {
         </div>
 
         <h1 className="relative text-5xl md:text-7xl font-extrabold mb-6 z-10">
-          Play. Earn. Own.
+          Own. Play. Win. Earn
         </h1>
         <p className="relative max-w-2xl mx-auto text-lg opacity-90 z-10">
           The world’s first decentralized bingo platform on{" "}
