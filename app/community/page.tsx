@@ -10,13 +10,13 @@ export default function CommunityPage() {
         </p>
 
         <div className="flex flex-wrap justify-center gap-6">
-          <a href="#" className="bg-[#5865F2] text-white px-6 py-3 rounded-xl shadow hover:opacity-90 transition">
+          <a href="https://discord.gg/tCWVcG5vnc" className="bg-[#5865F2] text-white px-6 py-3 rounded-xl shadow hover:opacity-90 transition">
             Discord
           </a>
-          <a href="#" className="bg-[#1DA1F2] text-white px-6 py-3 rounded-xl shadow hover:opacity-90 transition">
+          <a href="https://x.com/0xNFTBingo" className="bg-[#1DA1F2] text-white px-6 py-3 rounded-xl shadow hover:opacity-90 transition">
             Twitter / X
           </a>
-          <a href="#" className="bg-[#229ED9] text-white px-6 py-3 rounded-xl shadow hover:opacity-90 transition">
+          <a href="https://t.me/NFTBingoCommunity" className="bg-[#229ED9] text-white px-6 py-3 rounded-xl shadow hover:opacity-90 transition">
             Telegram
           </a>
         </div>
