@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "NFTBingo – Own. Play. Win. Earn",
@@ -8,7 +9,7 @@ export const metadata: Metadata = {
     "NFTBingo is a blockchain-powered bingo platform where players own NFT cards, play provably fair games, win prizes, and earn rewards.",
 
   openGraph: {
-    title: "NFTBingo : Own. Play. Win. Earn",
+    title: "NFTBingo – Own. Play. Win. Earn",
     description:
       "Own NFT bingo cards. Play provably fair games. Win prizes. Earn rewards through gameplay and staking on NFTBingo.",
     url: "https://nftbingo.com", // change if different
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
         url: "/images/social-preview.png",
         width: 1200,
         height: 630,
-        alt: "NFTBingo : Own. Play. Win. Earn",
+        alt: "NFTBingo – Own. Play. Win. Earn",
       },
     ],
     type: "website",
@@ -26,9 +27,8 @@ export const metadata: Metadata = {
 
   twitter: {
     card: "summary_large_image",
-    title: "NFTBingo : Own. Play. Win. Earn",
-    description:
-      "Own NFT bingo cards. Play fair games. Win prizes. Earn rewards on NFTBingo.",
+    title: "NFTBingo – Own. Play. Win. Earn",
+    description: "Own NFT bingo cards. Play fair games. Win prizes. Earn rewards on NFTBingo.",
     images: ["/images/social-preview.png"],
   },
 };
@@ -41,8 +41,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-white text-slate-900">
-        <Navbar />
-        {children}
+        <Providers>
+          <Navbar />
+          {children}
+        </Providers>
       </body>
     </html>
   );
