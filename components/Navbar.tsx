@@ -27,7 +27,11 @@ export default function Navbar() {
           <img
             src="/images/NFTBingoLogo.png"
             alt="NFTBingo Logo"
-            className="w-10 h-10 rounded-full shadow-md"
+             className="
+              w-14 h-14
+              object-contain
+              shadow-md
+            "
           />
           {/* Show name on mobile too */}
           <span className="inline font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-xl sm:text-2xl lg:text-3xl tracking-tight whitespace-nowrap">
