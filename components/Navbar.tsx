@@ -16,21 +16,21 @@ export default function Navbar() {
     { name: "Whitepaper", href: "/whitepaper" },
     { name: "Tokenomics", href: "/tokenomics" },
     { name: "Roadmap", href: "/roadmap" },
-    { name: "Community", href: "/community" },
-    { name: "Join", href: "/join" },
+    { name: "Join Community", href: "/join-community" },
   ];
 
   return (
-    <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
-      <div className="max-w-7xl mx-auto flex items-center justify-between px-8 py-4">
-        {/* Logo + Title */}
+    <nav className="w-full bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm fixed top-0 left-0 z-50">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center">
+        {/* Logo & Brand */}
         <Link href="/" className="flex items-center gap-3 flex-shrink-0">
           <img
-            src="/logoinprogress.png"
-            alt="NFT Bingo Logo"
-            className="h-14 md:h-16 w-auto drop-shadow-md"
+            src="/images/NFTBingoLogo.png"
+            alt="NFTBingo Logo"
+            className="w-10 h-10 rounded-full shadow-md"
           />
-          <span className="hidden md:inline font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-2xl lg:text-3xl tracking-tight whitespace-nowrap">
+          {/* Show name on mobile too */}
+          <span className="inline font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-xl sm:text-2xl lg:text-3xl tracking-tight whitespace-nowrap">
             NFTBingo
           </span>
         </Link>
@@ -41,7 +41,7 @@ export default function Navbar() {
             <Link
               key={item.name}
               href={item.href}
-              className={`font-medium transition-all ${
+              className={`font-medium transition-all whitespace-nowrap ${
                 pathname === item.href
                   ? "text-pink-600 border-b-2 border-pink-500"
                   : "text-slate-700 hover:text-pink-600"
@@ -54,83 +54,107 @@ export default function Navbar() {
           {/* Mint Button (desktop) – gradient, single line */}
           <Link
             href="/mint-nftbingo-cards"
-            className="cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
-          >
-            Mint NFTBingo Cards
+            className="cursor-pointer bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
+                    >
+            Mint Cards
           </Link>
 
-          {/* Connect Wallet Button (desktop) – same gradient style, single line */}
+          {/* Wallet Button (desktop) */}
           <ConnectButton.Custom>
             {({
               account,
               chain,
               openAccountModal,
-              openChainModal,
               openConnectModal,
-              authenticationStatus,
+              openChainModal,
               mounted,
             }) => {
-              const ready =
-                mounted && authenticationStatus !== "loading";
-              const connected =
-                ready &&
-                account &&
-                chain &&
-                (!authenticationStatus ||
-                  authenticationStatus === "authenticated");
+              const ready = mounted;
+              const connected = ready && account && chain;
 
-              if (!ready) {
-                return (
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      opacity: 0,
-                      pointerEvents: "none",
-                      userSelect: "none",
-                    }}
-                  >
+              return (
+                <div
+                  aria-hidden={!ready}
+                  style={{
+                    opacity: ready ? 1 : 0,
+                    pointerEvents: ready ? "auto" : "none",
+                    userSelect: ready ? "auto" : "none",
+                  }}
+                >
+                  {!connected ? (
                     <button
-                      type="button"
-                      className="cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow transition-all duration-300 whitespace-nowrap"
+                      onClick={openConnectModal}
+                      className="cursor-pointer bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
                     >
                       Connect Wallet
                     </button>
-                  </div>
-                );
-              }
+                  ) : chain.unsupported ? (
+                    <button
+                      onClick={openChainModal}
+                      className="cursor-pointer bg-red-500 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
+                    >
+                      Wrong network
+                    </button>
+                  ) : (
+                    <button
+                      onClick={openAccountModal}
+                      className="cursor-pointer bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
+                    >
+                      {account?.displayName ?? "Wallet"}
+                    </button>
+                  )}
+                </div>
+              );
+            }}
+          </ConnectButton.Custom>
+        </div>
 
-              if (!connected) {
-                return (
-                  <button
-                    type="button"
-                    onClick={openConnectModal}
-                    className="cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
-                  >
-                    Connect Wallet
-                  </button>
-                );
-              }
-
-              if (chain?.unsupported) {
-                return (
-                  <button
-                    type="button"
-                    onClick={openChainModal}
-                    className="cursor-pointer bg-gradient-to-r from-rose-600 to-red-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
-                  >
-                    Wrong network
-                  </button>
-                );
-              }
+        {/* Mobile Wallet Button (stays visible in top bar) */}
+        <div className="md:hidden ml-auto mr-3">
+          <ConnectButton.Custom>
+            {({
+              account,
+              chain,
+              openAccountModal,
+              openConnectModal,
+              openChainModal,
+              mounted,
+            }) => {
+              const ready = mounted;
+              const connected = ready && account && chain;
 
               return (
-                <button
-                  type="button"
-                  onClick={openAccountModal}
-                  className="cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
+                <div
+                  aria-hidden={!ready}
+                  style={{
+                    opacity: ready ? 1 : 0,
+                    pointerEvents: ready ? "auto" : "none",
+                    userSelect: ready ? "auto" : "none",
+                  }}
                 >
-                  {account?.displayName ?? "Wallet"}
-                </button>
+                  {!connected ? (
+                    <button
+                      onClick={openConnectModal}
+                      className="cursor-pointer bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-semibold px-3 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
+                    >
+                      Connect
+                    </button>
+                  ) : chain.unsupported ? (
+                    <button
+                      onClick={openChainModal}
+                      className="cursor-pointer bg-red-500 text-white font-semibold px-3 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
+                    >
+                      Wrong
+                    </button>
+                  ) : (
+                    <button
+                      onClick={openAccountModal}
+                      className="cursor-pointer bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white font-semibold px-3 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
+                    >
+                      {account?.displayName ?? "Wallet"}
+                    </button>
+                  )}
+                </div>
               );
             }}
           </ConnectButton.Custom>
@@ -138,7 +162,7 @@ export default function Navbar() {
 
         {/* Mobile Menu Button */}
         <button
-          className="md:hidden text-slate-700 hover:text-pink-600 ml-auto"
+          className="md:hidden text-slate-700 hover:text-pink-600"
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label="Toggle menu"
         >
@@ -154,7 +178,7 @@ export default function Navbar() {
               <Link
                 key={item.name}
                 href={item.href}
-                className={`font-medium ${
+                className={`font-medium whitespace-nowrap ${
                   pathname === item.href
                     ? "text-pink-600"
                     : "text-slate-700 hover:text-pink-600"
@@ -165,90 +189,14 @@ export default function Navbar() {
               </Link>
             ))}
 
-            {/* Mint Button (mobile) – gradient */}
+            {/* Mint Button (mobile) */}
             <Link
               href="/mint-nftbingo-cards"
-              className="w-11/12 text-center cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all duration-300"
+              className="w-11/12 text-center cursor-pointer bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300 whitespace-nowrap"
               onClick={() => setMenuOpen(false)}
             >
-              Mint NFTBingo Cards
+              Mint Cards
             </Link>
-
-            {/* Connect Wallet Button (mobile) – same gradient style */}
-            <ConnectButton.Custom>
-              {({
-                account,
-                chain,
-                openAccountModal,
-                openChainModal,
-                openConnectModal,
-                authenticationStatus,
-                mounted,
-              }) => {
-                const ready =
-                  mounted && authenticationStatus !== "loading";
-                const connected =
-                  ready &&
-                  account &&
-                  chain &&
-                  (!authenticationStatus ||
-                    authenticationStatus === "authenticated");
-
-                if (!ready) {
-                  return (
-                    <div
-                      aria-hidden="true"
-                      style={{
-                        opacity: 0,
-                        pointerEvents: "none",
-                        userSelect: "none",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="w-11/12 text-center cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow transition-all duration-300"
-                      >
-                        Connect Wallet
-                      </button>
-                    </div>
-                  );
-                }
-
-                if (!connected) {
-                  return (
-                    <button
-                      type="button"
-                      onClick={openConnectModal}
-                      className="w-11/12 text-center cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300"
-                    >
-                      Connect Wallet
-                    </button>
-                  );
-                }
-
-                if (chain?.unsupported) {
-                  return (
-                    <button
-                      type="button"
-                      onClick={openChainModal}
-                      className="w-11/12 text-center cursor-pointer bg-gradient-to-r from-rose-600 to-red-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300"
-                    >
-                      Wrong network
-                    </button>
-                  );
-                }
-
-                return (
-                  <button
-                    type="button"
-                    onClick={openAccountModal}
-                    className="w-11/12 text-center cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:shadow-lg hover:scale-105 transition-all duration-300"
-                  >
-                    {account?.displayName ?? "Wallet"}
-                  </button>
-                );
-              }}
-            </ConnectButton.Custom>
           </div>
         </div>
       )}
