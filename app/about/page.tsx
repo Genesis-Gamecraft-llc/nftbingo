@@ -6,9 +6,10 @@ export default function AboutPage() {
       {/* Hero */}
       <section className="bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white py-20 px-6 text-center">
         <h1 className="text-4xl md:text-6xl font-extrabold mb-4">About NFTBingo</h1>
-        <p className="max-w-2xl mx-auto text-lg opacity-90">
-          Where blockchain innovation meets one of the world’s favorite games.
-          Own your cards. Play securely. Earn real rewards.
+        <p className="max-w-3xl mx-auto text-lg opacity-90">
+          Bingo — modernized without losing what makes it fun.
+          <br />
+          Own your cards. Play provably fair. Win together. Earn through participation.
         </p>
       </section>
 
@@ -16,12 +17,15 @@ export default function AboutPage() {
       <section className="max-w-5xl mx-auto py-16 px-6 text-center md:text-left">
         <h2 className="text-3xl font-bold mb-4 text-pink-600">Our Vision</h2>
         <p className="text-lg leading-relaxed mb-8">
-          NFTBingo reimagines classic bingo through blockchain technology. Each bingo card is minted as an NFT—giving players provable ownership, verifiable fairness, and new ways to earn from their cards. From casual players to collectors, everyone can participate in a system that’s transparent, secure, and built to reward engagement.
+          NFTBingo is building a modern bingo platform that keeps traditional gameplay intact while upgrading
+          the infrastructure behind it. We use blockchain to make ownership real, verification automatic,
+          and outcomes auditable — without turning bingo into a pay-to-win game.
         </p>
 
         <h2 className="text-3xl font-bold mb-4 text-indigo-600">Our Mission</h2>
         <p className="text-lg leading-relaxed">
-          To redefine casual gaming through true ownership, fairness, and decentralized reward systems. We aim to merge nostalgia with next-generation transparency—where every win, card, and draw is verifiable on-chain.
+          To modernize bingo with true digital ownership, verifiable fairness, and automated prize distribution — and
+          to create a system that can scale from online play to real-world halls, charities, and community events.
         </p>
       </section>
 
@@ -30,26 +34,65 @@ export default function AboutPage() {
         <div className="max-w-5xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4 text-fuchsia-600">Our Story</h2>
           <p className="text-lg text-slate-700 leading-relaxed">
-            NFTBingo began as a simple idea: take the timeless fun of bingo and give players real ownership and transparency. Our team of blockchain veterans and lifelong gamers built a system that rewards players, protects fairness, and connects communities through smart contracts and NFTs.
+            NFTBingo started with a simple idea: bingo deserves better tools. Paper cards, manual verification,
+            and fragmented payout systems are expensive, error-prone, and hard to scale. We’re taking the
+            parts that have always worked — patterns, calling BINGO, shared excitement — and upgrading the
+            backend so gameplay is smoother, fairer, and easier to run anywhere.
           </p>
         </div>
       </section>
 
-      {/* How It Works */}
+      {/* What Makes NFTBingo Different */}
       <section className="max-w-6xl mx-auto py-16 px-6 grid md:grid-cols-2 gap-12 items-center">
         <div>
-          <h2 className="text-3xl font-bold mb-4 text-pink-600">How It Works</h2>
+          <h2 className="text-3xl font-bold mb-4 text-pink-600">What Makes NFTBingo Different</h2>
           <ul className="space-y-4 text-lg leading-relaxed list-disc list-inside">
-            <li>Buy your NFT Bingo card—each one is unique and tradeable.</li>
-            <li>Use <span className="font-semibold">BINGO tokens</span> to buy into games.</li>
-            <li>Join 24/7 rooms or limited “player-capped” games for bigger prizes.</li>
-            <li>Stake or lend your cards to other players and share in their winnings.</li>
+            <li>
+              <span className="font-semibold">Provably fair gameplay</span> — randomness and resolution are auditable,
+              and payouts are enforced automatically.
+            </li>
+            <li>
+              <span className="font-semibold">True card ownership</span> — your bingo cards are NFTs you can keep,
+              reuse, and (where enabled) transfer.
+            </li>
+            <li>
+              <span className="font-semibold">No pay-to-win</span> — all cards have identical odds. Visuals and editions
+              are cosmetic; gameplay fairness is non-negotiable.
+            </li>
+            <li>
+              <span className="font-semibold">Stable buy-in experience</span> — pricing is designed to stay consistent
+              for players even when token markets move.
+            </li>
           </ul>
         </div>
+
         <div className="rounded-xl bg-gradient-to-tr from-pink-50 via-fuchsia-50 to-indigo-50 p-8 shadow-md border border-slate-200 text-center">
-          <p className="text-xl font-semibold text-slate-700 mb-2">Provably Fair</p>
+          <p className="text-xl font-semibold text-slate-700 mb-2">Built for Real Bingo</p>
           <p className="text-slate-600">
-            All draws are recorded on-chain, ensuring transparent, tamper-proof gameplay.
+            We’re not reinventing the rules — we’re modernizing the system so bingo can be faster, cleaner,
+            and easier to verify at scale.
+          </p>
+        </div>
+      </section>
+
+      {/* Creator Launchpad */}
+      <section className="max-w-5xl mx-auto py-16 px-6">
+        <h2 className="text-3xl font-bold mb-4 text-indigo-600">A Launchpad for Creators</h2>
+        <p className="text-lg leading-relaxed">
+          NFTBingo is also a distribution and engagement engine for creators and early-stage NFT projects.
+          Partner artwork can be integrated into card backgrounds, and platform activity can be used to help
+          drive attention and demand for partnered projects through prize systems and ecosystem rewards.
+        </p>
+      </section>
+
+      {/* Physical Integration */}
+      <section className="bg-white border-y border-slate-200 py-16 px-6">
+        <div className="max-w-5xl mx-auto text-center">
+          <h2 className="text-3xl font-bold mb-4 text-fuchsia-600">Modernizing Physical Bingo</h2>
+          <p className="text-lg text-slate-700 leading-relaxed">
+            Long term, NFTBingo is designed to extend into real-world halls and community venues using standard
+            consumer hardware. Digital card management and automated verification can reduce disputes and
+            overhead while keeping the familiar social experience intact.
           </p>
         </div>
       </section>
@@ -58,8 +101,9 @@ export default function AboutPage() {
       <section className="max-w-5xl mx-auto py-16 px-6">
         <h2 className="text-3xl font-bold mb-4 text-indigo-600">Why Polygon?</h2>
         <p className="text-lg leading-relaxed">
-          Polygon offers lightning-fast transactions, low fees, and full compatibility with Ethereum smart contracts.
-          That means NFTBingo can deliver seamless gameplay and secure rewards without expensive gas costs—perfect for everyday players.
+          Polygon offers fast transactions, low fees, and strong compatibility with Ethereum tooling —
+          which matters for a game that needs smooth gameplay loops and frequent interactions. It helps
+          keep participation practical for everyday players.
         </p>
       </section>
 
@@ -70,15 +114,21 @@ export default function AboutPage() {
           <div className="grid md:grid-cols-3 gap-8">
             <div>
               <h3 className="text-xl font-semibold text-pink-600 mb-2">Transparency</h3>
-              <p className="text-slate-700">Every transaction, draw, and reward is visible on the blockchain.</p>
+              <p className="text-slate-700">
+                Clear rules, verifiable outcomes, and automated distribution — no mystery math, no “trust us.”
+              </p>
             </div>
             <div>
               <h3 className="text-xl font-semibold text-indigo-600 mb-2">Fairness</h3>
-              <p className="text-slate-700">Our smart contracts ensure outcomes are provably fair—no hidden algorithms, no rigged systems.</p>
+              <p className="text-slate-700">
+                All cards have equal odds. No pay-to-win mechanics, ever — fairness is foundational.
+              </p>
             </div>
             <div>
               <h3 className="text-xl font-semibold text-fuchsia-600 mb-2">Community</h3>
-              <p className="text-slate-700">We’re building a space where players, collectors, and creators collaborate to shape the future of NFT gaming.</p>
+              <p className="text-slate-700">
+                Built alongside players and creators — with room for partnerships, events, and real-world adoption.
+              </p>
             </div>
           </div>
         </div>
@@ -86,12 +136,13 @@ export default function AboutPage() {
 
       {/* Team & Community */}
       <section className="py-16 px-6 text-center">
-        <h2 className="text-3xl font-bold mb-8 text-pink-600">Our Team & Community</h2>
-        <p className="max-w-2xl mx-auto text-lg text-slate-600 mb-10">
-          Built by blockchain veterans and lifelong gamers, NFTBingo is a community-driven project focused on transparency, fairness, and fun. Join our Discord, follow us on social media, and help shape the future of on-chain gaming.
+        <h2 className="text-3xl font-bold mb-8 text-pink-600">Build With Us</h2>
+        <p className="max-w-3xl mx-auto text-lg text-slate-600 mb-10">
+          NFTBingo is community-driven and built for longevity. If you’re a player, a creator, or someone who
+          runs games in the real world — we want your input as we keep shipping.
         </p>
         <a
-          href="/community"
+          href="/join-community"
           className="inline-block rounded-xl bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-8 py-4 shadow hover:shadow-lg transition"
         >
           Join the Community
@@ -107,10 +158,10 @@ export default function AboutPage() {
           Read the Whitepaper
         </a>
         <a
-          href="/join"
+          href="/join-community"
           className="inline-block ml-4 rounded-xl border border-slate-300 px-8 py-4 font-semibold text-slate-700 hover:bg-white transition"
         >
-          Join the Mailing List
+          Join Community
         </a>
       </section>
     </main>
