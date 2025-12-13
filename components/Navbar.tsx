@@ -14,7 +14,6 @@ export default function Navbar() {
     { name: "Home", href: "/" },
     { name: "About", href: "/about" },
     { name: "Whitepaper", href: "/whitepaper" },
-    { name: "Tokenomics", href: "/tokenomics" },
     { name: "Roadmap", href: "/roadmap" },
     { name: "Join Community", href: "/join-community" },
   ];
