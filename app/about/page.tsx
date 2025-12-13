@@ -14,7 +14,7 @@ export default function AboutPage() {
       </section>
 
       {/* Vision & Mission */}
-      <section className="max-w-5xl mx-auto py-16 px-6 text-center md:text-left">
+      <section className="max-w-5xl mx-auto py-16 px-6 text-center">
         <h2 className="text-3xl font-bold mb-4 text-pink-600">Our Vision</h2>
         <p className="text-lg leading-relaxed mb-8">
           NFTBingo is building a modern bingo platform that keeps traditional gameplay intact while upgrading
@@ -31,7 +31,7 @@ export default function AboutPage() {
 
       {/* Origins */}
       <section className="bg-white border-y border-slate-200 py-16 px-6">
-        <div className="max-w-5xl mx-auto text-center md:text-left">
+        <div className="max-w-5xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4 text-fuchsia-600">Our Story</h2>
           <p className="text-lg text-slate-700 leading-relaxed">
             NFTBingo started with a simple idea: bingo deserves better tools. Paper cards, manual verification,
