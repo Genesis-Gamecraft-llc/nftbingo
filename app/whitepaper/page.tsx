@@ -269,9 +269,7 @@ export default function WhitepaperPage() {
                 limited to economic or participation features and never affect gameplay outcomes.
               </p>
               <p>
-                The platform may introduce limited card classes, such as Founder Edition cards, which may
-                carry economic or participation advantages. These advantages are explicitly restricted from
-                influencing winning odds, and specific benefits may evolve over time.
+                The platform may introduce limited card classes, such as Founder Edition cards, which WILL include additional economic benefits. These benefits do not affect winning probability or gameplay mechanics.
               </p>
             </div>
 
@@ -559,7 +557,39 @@ export default function WhitepaperPage() {
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">4.3 Card Usage and Game Commitment</h3>
+              <h3 className="text-lg font-bold text-slate-900">4.3 NFT Minting and Platform Funding</h3>
+              <p>
+                NFTBingo cards are issued through periodic NFT mint events. Minting is the mechanism by which
+                new card sets are introduced into the platform.
+              </p>
+              <p>
+                Revenue generated from NFT minting is separate from gameplay buy-ins and does not affect
+                game odds, prize pools, or payout mechanics. Mint revenue is used to support platform
+                development, infrastructure, operational readiness, and token liquidity provisioning.
+              </p>
+              <p>For platform-developed or first-party card sets, mint proceeds are allocated as follows:</p>
+              <ul className="space-y-2">
+                <li>● 45% to platform operations, including development, infrastructure, security, compliance, and support</li>
+                <li>● 45% to token liquidity provisioning</li>
+                <li>
+                  ● 10% allocated to the Creator Launchpad, which, in the absence of an external launchpad partner,
+                  is redirected evenly between platform operations and token liquidity
+                </li>
+              </ul>
+              <p>
+                For Creator Launchpad card sets, a fixed portion of mint proceeds is allocated to the Creator
+                Launchpad pool. These funds are used primarily for secondary-market acquisition of NFTs
+                associated with the launchpad project, which may later be redistributed to players as prizes
+                within NFTBingo games.
+              </p>
+              <p>
+                NFT minting revenue is not used to fund gameplay prize pools and does not influence game
+                resolution or player odds.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-lg font-bold text-slate-900">4.4 Card Usage and Game Commitment</h3>
               <p>
                 A card may be committed to a single active game at a time. While committed, the card is
                 temporarily locked and cannot be transferred or entered into another game.
@@ -575,7 +605,7 @@ export default function WhitepaperPage() {
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">4.4 Card Classes and Utility Distinctions</h3>
+              <h3 className="text-lg font-bold text-slate-900">4.5 Card Classes and Utility Distinctions</h3>
               <p>
                 All NFTBingo cards share identical gameplay odds. No card, edition, or class alters the
                 probability of winning a game.
@@ -593,7 +623,7 @@ export default function WhitepaperPage() {
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">4.5 Staking, Lending, and Delegated Use</h3>
+              <h3 className="text-lg font-bold text-slate-900">4.6 Staking, Lending, and Delegated Use</h3>
               <p>
                 The platform may support mechanisms that allow card owners to grant limited usage rights to
                 others without transferring ownership. This may include staking, lending, or delegated
@@ -611,7 +641,7 @@ export default function WhitepaperPage() {
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">4.6 Long-Term Card Utility</h3>
+              <h3 className="text-lg font-bold text-slate-900">4.7 Long-Term Card Utility</h3>
               <p>
                 NFTBingo cards are designed as long-lived assets rather than disposable entries. Beyond direct
                 gameplay, cards may support future platform features such as special event eligibility,
@@ -698,25 +728,52 @@ export default function WhitepaperPage() {
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">5.5 Platform Fees and Sustainability</h3>
+              <h3 className="text-lg font-bold text-slate-900">5.5 Buy-In Allocation and Platform Sustainability</h3>
               <p>
-                The platform may retain a portion of game activity as a fee to support ongoing development,
-                infrastructure costs, and ecosystem growth.
+                Each game’s total buy-in value is allocated across predefined pools at the moment the game
+                begins. These allocations are fixed for the duration of that game and do not change based on
+                outcomes, participants, or winning card types.
               </p>
-              <p>Fee structures are designed to be:</p>
+              <p>Total game buy-ins are allocated as follows:</p>
               <ul className="space-y-2">
-                <li>● Transparent</li>
-                <li>● Predictable</li>
-                <li>● Independent of gameplay outcomes</li>
+                <li>● 75% to the Prize Pool, distributed to winning cards according to resolution rules</li>
+                <li>● 10% to Platform Operations, supporting development, infrastructure, security, compliance, and support</li>
+                <li>● 5% to the Creator Launchpad pool</li>
+                <li>● 5% to the Jackpot Pool</li>
+                <li>● 5% to the Card Bonus and Token Buybacks pool</li>
               </ul>
-              <p>Fees do not influence card odds, number draws, or game resolution.</p>
+              <p>
+                The Creator Launchpad pool (5%) is used to support third-party Creator Launchpad projects. If a
+                Creator Launchpad card wins a game, the Creator Launchpad pool allocation for that game is
+                applied according to the launchpad program rules. If no Creator Launchpad card wins, the full
+                Creator Launchpad pool allocation for that game is redistributed evenly among all winning cards
+                as part of the prize distribution.
+              </p>
+              <p>
+                The Jackpot Pool (5%) accrues over time and is used to fund jackpot-style prize events and
+                special prize distributions as defined by the platform. If a jackpot condition is not active for a
+                given game, that game’s Jackpot allocation remains in the Jackpot Pool for future use.
+              </p>
+              <p>
+                The Card Bonus and Token Buybacks pool (5%) is used to fund card-specific bonuses, token
+                buybacks, and NFT buybacks that may later be redistributed to players as prizes. If a qualifying
+                card class triggers a bonus during a game, the applicable allocation is applied according to
+                predefined rules. If no qualifying condition is triggered, the allocation remains within the Card
+                Bonus and Token Buybacks pool for future use.
+              </p>
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">5.6 Founder and Card-Based Economic Benefits</h3>
+              <h3 className="text-lg font-bold text-slate-900">5.6 Card-Based Economic Mechanics</h3>
               <p>
-                Certain card classes may provide economic advantages within the platform, such as enhanced
-                revenue sharing or fee-related benefits, without affecting gameplay outcomes.
+                If a winning card is subject to rental, staking, or special ownership mechanics, that card’s
+                individual share of the prize pool may be split between the player and the card owner based on
+                predefined card class parameters. These ownership-based distributions are applied on a per-card
+                basis and do not alter the total size of the prize pool or the share allocated to other winning cards.
+              </p>
+              <p>
+                If no rental, staking, or special ownership conditions apply to a winning card, 100% of that card’s
+                share of the prize pool is distributed directly to the player.
               </p>
             </div>
 
@@ -918,83 +975,42 @@ export default function WhitepaperPage() {
               <h3 className="text-lg font-bold text-slate-900">7.3 Player Fairness and Consumer Protection</h3>
               <p>
                 The platform is designed to minimize unfair advantages related to speed, dexterity, or device
-                capability.
+                access.
               </p>
-              <p>Key protections include:</p>
-              <ul className="space-y-2">
-                <li>● Uniform odds across all cards</li>
-                <li>● Automated number application to cards</li>
-                <li>● Number-based win resolution rather than reaction speed</li>
-                <li>● Transparent prize structures disclosed prior to entry</li>
-              </ul>
               <p>
-                These measures are intended to support accessibility, fairness, and a consistent player
-                experience.
+                By basing win eligibility on number windows and deterministic validation, NFTBingo ensures
+                that outcomes remain consistent across participants regardless of interface or connection
+                quality.
+              </p>
+              <p>
+                Automated payout execution and verifiable game history provide transparency and reduce the
+                likelihood of disputes.
               </p>
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">7.4 Operational Integrity and Reliability</h3>
+              <h3 className="text-lg font-bold text-slate-900">7.4 Jurisdictional Access Controls</h3>
               <p>
-                NFTBingo relies on automated systems to manage game flow, resolution, and prize distribution.
-                Once a game begins, outcomes cannot be altered through manual intervention.
+                Certain jurisdictions restrict or prohibit bingo or online gaming activities. NFTBingo is designed
+                to support access controls and geographic restrictions where required.
               </p>
-              <p>Operational safeguards are designed to address:</p>
-              <ul className="space-y-2">
-                <li>● Interrupted sessions</li>
-                <li>● Delayed claims</li>
-                <li>● Network or interface disruptions</li>
-              </ul>
               <p>
-                These safeguards ensure that games resolve deterministically and consistently, even under
-                non-ideal conditions.
+                Participation may be limited, gated, or disabled in locations where deployment would be non-
+                compliant. The platform may also support operator-specific configurations for private or
+                regulated deployments.
               </p>
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">7.5 Custody and Asset Handling</h3>
+              <h3 className="text-lg font-bold text-slate-900">7.5 Security and Smart Contract Risk</h3>
               <p>
-                Players retain control over their assets through ownership of NFTBingo cards and receipt of
-                prizes according to platform rules.
+                NFTBingo relies on smart contracts and blockchain infrastructure. As with any decentralized
+                system, there are inherent risks related to contract vulnerabilities, integration dependencies, and
+                external protocol failures.
               </p>
               <p>
-                The platform is designed to minimize custodial risk by limiting discretionary control over player
-                assets and enforcing distribution through automated mechanisms.
-              </p>
-              <p>
-                Specific custody models may vary depending on jurisdiction, access method, or integration type,
-                particularly in physical or assisted environments.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">7.6 Evolving Regulatory Landscape</h3>
-              <p>
-                Regulation of digital assets, online gaming, and hybrid physical-digital platforms continues to
-                evolve.
-              </p>
-              <p>
-                NFTBingo is designed with adaptability in mind, allowing features, access methods, or
-                participation rules to be modified or restricted as regulatory clarity develops. This flexibility
-                supports responsible growth without requiring fundamental changes to core gameplay logic.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">7.7 Jurisdictional Access and Availability</h3>
-              <p>
-                Bingo and related gaming activities may be restricted or regulated differently across
-                jurisdictions.
-              </p>
-              <p>
-                NFTBingo is designed to respect applicable laws and regulations by limiting or modifying access
-                where required. Platform availability, game types, prize structures, or participation mechanisms
-                may be restricted, disabled, or adjusted based on jurisdictional requirements.
-              </p>
-              <p>
-                The platform does not promote or facilitate participation in locations where such activity is
-                prohibited and may implement access controls or alternative configurations to ensure
-                responsible operation.
+                The platform prioritizes secure development practices, auditing processes, and conservative
+                deployment parameters to reduce these risks.
               </p>
             </div>
           </div>
@@ -1003,137 +1019,62 @@ export default function WhitepaperPage() {
 
       {
         id: "8",
-        title: "8. Physical Bingo Hall Integration and Future Deployment",
+        title: "8. Physical Integration and Future Expansion",
         body: (
           <div className="space-y-6 text-slate-700 leading-relaxed">
             <p>
-              NFTBingo is designed to extend beyond a purely online platform and support integration with
-              traditional bingo halls, community venues, and in-person events. This section outlines how the
-              platform may be deployed in physical environments and how digital infrastructure can enhance,
-              rather than replace, established bingo operations.
+              NFTBingo is designed to support future integration into physical bingo halls and community
+              venues, enabling traditional operators to modernize game verification, prize handling, and card
+              distribution without losing the in-person social experience.
             </p>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">8.1 Hybrid Physical and Digital Gameplay</h3>
+              <h3 className="text-lg font-bold text-slate-900">8.1 Physical Venue Compatibility</h3>
               <p>
-                NFTBingo supports hybrid models where physical and digital participation coexist within the
-                same game framework.
+                The platform can be accessed through standard consumer hardware such as tablets,
+                touchscreens, laptops, and existing venue computers configured in a controlled or kiosk-style
+                environment.
               </p>
-              <p>In such models:</p>
-              <ul className="space-y-2">
-                <li>● Players may participate in-person or remotely</li>
-                <li>● Games follow the same underlying rules and resolution logic</li>
-                <li>● Winning verification and prize allocation are handled consistently across participation methods</li>
-              </ul>
               <p>
-                This approach allows physical bingo halls to modernize operations while preserving the social
-                and community aspects that define traditional bingo.
+                This approach reduces upfront cost and avoids requiring specialized proprietary equipment,
+                allowing venues to adopt digital functionality incrementally.
               </p>
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">8.2 Low-Barrier Physical Deployment</h3>
-              <p>Physical integration does not require proprietary or specialized hardware.</p>
+              <h3 className="text-lg font-bold text-slate-900">8.2 Hybrid Bingo Models</h3>
               <p>
-                NFTBingo is designed to operate on standard consumer devices, including tablets,
-                touchscreens, or existing computers configured in controlled or kiosk-style modes. This enables
-                bingo halls and event organizers to adopt digital functionality with minimal upfront cost.
-              </p>
-              <p>Deployment options may include:</p>
-              <ul className="space-y-2">
-                <li>● Front-of-house player terminals</li>
-                <li>● Staff-operated verification stations</li>
-                <li>● Event-specific or temporary setups</li>
-              </ul>
-              <p>This flexibility supports gradual adoption rather than mandatory infrastructure replacement.</p>
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">8.3 Manual Interaction and Venue Control</h3>
-              <p>
-                NFTBingo recognizes that physical bingo environments may prefer traditional interaction styles.
-                Venues may configure games to enforce manual player actions, such as manual number
-                marking or bingo calling, consistent with established hall practices. These configurations do not
-                alter winning odds or game fairness and are applied uniformly across all participants within a
-                given event.
+                NFTBingo may support hybrid game formats where physical players and online players
+                participate in the same game instance, with shared number draws and unified verification.
               </p>
               <p>
-                This allows venues to maintain familiar gameplay experiences while benefiting from automated
-                verification and payout infrastructure.
+                This enables cross-venue jackpots, remote participation, and expanded prize variety while
+                maintaining the familiar hall-based experience.
               </p>
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">8.4 Prize Verification and Operational Benefits</h3>
-              <p>By integrating NFTBingo into physical environments, venues may benefit from:</p>
-              <ul className="space-y-2">
-                <li>● Automated verification of winning patterns</li>
-                <li>● Reduced disputes and faster resolution</li>
-                <li>● Transparent prize tracking and distribution</li>
-                <li>● Simplified record-keeping for events or fundraising</li>
-              </ul>
+              <h3 className="text-lg font-bold text-slate-900">8.3 Operational Efficiency and Sustainability</h3>
               <p>
-                These features reduce operational overhead while improving player trust and experience.
+                Digital card management and automated verification reduce the operational burden of paper
+                cards, dobbers, and ink, lowering recurring costs and reducing waste.
+              </p>
+              <p>
+                Automated payout tracking and auditability improve transparency for venues and charitable
+                organizers, reducing reconciliation overhead and increasing player trust.
               </p>
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">8.5 Charity, Community, and Special Events</h3>
+              <h3 className="text-lg font-bold text-slate-900">8.4 Future Expansion Opportunities</h3>
               <p>
-                NFTBingo is well suited for charity bingo, community fundraising, and special events.
-              </p>
-              <p>Hybrid and physical deployments may support:</p>
-              <ul className="space-y-2">
-                <li>● Event-specific game configurations</li>
-                <li>● Sponsored or donated prize pools</li>
-                <li>● Transparent tracking of proceeds and outcomes</li>
-              </ul>
-              <p>
-                This enables organizations to leverage modern infrastructure while maintaining the accessibility
-                and familiarity of bingo.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">8.6 Future Expansion</h3>
-              <p>Physical integration represents a long-term expansion path rather than an immediate requirement.</p>
-              <p>As the platform evolves, NFTBingo may support:</p>
-              <ul className="space-y-2">
-                <li>● Additional venue configurations</li>
-                <li>● Expanded access interfaces</li>
-                <li>● Deeper integration with creator partnerships</li>
-                <li>● New participation models aligned with regulatory requirements</li>
-              </ul>
-              <p>
-                By designing physical integration as an extension of existing systems rather than a
-                replacement, NFTBingo positions itself as a modernization layer adaptable to a wide range of
-                environments.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="text-lg font-bold text-slate-900">8.7 Operational Efficiency and Environmental Considerations</h3>
-              <p>
-                Traditional bingo operations rely heavily on disposable materials, including printed paper cards,
-                ink-based dobbers, and associated supplies. These materials require continual replenishment,
-                storage, transportation, and disposal, contributing to recurring operational costs and physical
-                waste.
+                Over time, the platform may expand to support additional deployment models including
+                white-labeled instances, venue licensing, charity event configurations, and inter-hall networked
+                jackpots.
               </p>
               <p>
-                By transitioning card issuance, number tracking, and win verification to a digital infrastructure,
-                NFTBingo significantly reduces reliance on paper cards, dobbers, and ink. NFT-based bingo
-                cards are reusable digital assets that eliminate the need for repeated printing and manual
-                marking while preserving familiar gameplay patterns.
-              </p>
-              <p>
-                For physical venues, this modernization can lower material expenses, simplify event logistics,
-                and reduce waste without removing the social or interactive elements that define traditional
-                bingo. Players continue to recognize patterns and call bingo, while venues benefit from
-                automated verification and reduced consumable usage.
-              </p>
-              <p>
-                These efficiency gains are a natural byproduct of digital integration and support environmentally
-                conscious practices alongside improved operational consistency.
+                These expansions are designed to preserve core bingo mechanics while enabling modern
+                infrastructure for both digital-first and physical-first environments.
               </p>
             </div>
           </div>
@@ -1142,8 +1083,6 @@ export default function WhitepaperPage() {
     ],
     []
   );
-
-  const isOpen = (id: string) => openIds.has(id);
 
   const toggle = (id: string) => {
     setOpenIds((prev) => {
@@ -1154,72 +1093,28 @@ export default function WhitepaperPage() {
     });
   };
 
-  const expandAll = () => setOpenIds(new Set(sections.map((s) => s.id)));
-  const collapseAll = () => setOpenIds(new Set());
-
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100 px-6 py-14">
-      <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900">
-            NFTBingo Whitepaper
-          </h1>
+    <main className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-5xl px-4 py-10">
+        <h1 className="text-3xl font-extrabold text-slate-900">NFTBingo Whitepaper</h1>
+        <p className="mt-2 text-slate-600">
+          Read the full project overview, platform design, economic model, and expansion vision.
+        </p>
 
-          <p className="mt-4 text-slate-600 max-w-3xl mx-auto">
-            Read the full whitepaper below, or download the PDF.
-          </p>
-
-          {/* Actions */}
-          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <a
-              href="/whitepaper/NFTBingo-Whitepaper.pdf"
-              download
-              className="cursor-pointer bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-8 py-3 rounded-xl shadow hover:shadow-lg hover:scale-[1.02] transition-all duration-300"
-            >
-              Download PDF
-            </a>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={expandAll}
-                 className="cursor-pointer bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-8 py-3 rounded-xl shadow hover:shadow-lg hover:scale-[1.02] transition-all duration-300"
-            >
-                Expand all
-              </button>
-              <button
-                type="button"
-                onClick={collapseAll}
-                 className="cursor-pointer bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-8 py-3 rounded-xl shadow hover:shadow-lg hover:scale-[1.02] transition-all duration-300"
-            >
-                Collapse all
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Accordion */}
-        <div className="space-y-4">
+        <div className="mt-8 space-y-4">
           {sections.map((section) => {
-            const open = isOpen(section.id);
+            const open = openIds.has(section.id);
             return (
               <div
                 key={section.id}
-                className="bg-white rounded-2xl shadow border border-slate-100 overflow-hidden"
+                className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden"
               >
                 <button
                   type="button"
                   onClick={() => toggle(section.id)}
-                  className="w-full text-left px-6 py-5 flex items-center justify-between gap-4 hover:bg-slate-50 transition"
-                  aria-expanded={open}
+                  className="w-full flex items-center justify-between px-6 py-4 text-left"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="h-3 w-3 rounded-full bg-gradient-to-r from-pink-600 to-indigo-600" />
-                    <h2 className="text-lg md:text-xl font-extrabold text-slate-900">
-                      {section.title}
-                    </h2>
-                  </div>
+                  <span className="text-lg font-bold text-slate-900">{section.title}</span>
                   <Chevron open={open} />
                 </button>
 
