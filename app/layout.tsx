@@ -42,9 +42,10 @@ export default function RootLayout({
     <html lang="en">
       <body className="bg-white text-slate-900">
         <Providers>
-          <Navbar />
-          {children}
-        </Providers>
+  <Navbar />
+  <div className="pt-20">{children}</div>
+</Providers>
+
       </body>
     </html>
   );
