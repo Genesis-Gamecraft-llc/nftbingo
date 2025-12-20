@@ -1084,6 +1084,8 @@ export default function WhitepaperPage() {
     []
   );
 
+   const isOpen = (id: string) => openIds.has(id);
+
   const toggle = (id: string) => {
     setOpenIds((prev) => {
       const next = new Set(prev);
@@ -1093,28 +1095,72 @@ export default function WhitepaperPage() {
     });
   };
 
-  return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-5xl px-4 py-10">
-        <h1 className="text-3xl font-extrabold text-slate-900">NFTBingo Whitepaper</h1>
-        <p className="mt-2 text-slate-600">
-          Read the full project overview, platform design, economic model, and expansion vision.
-        </p>
+  const expandAll = () => setOpenIds(new Set(sections.map((s) => s.id)));
+  const collapseAll = () => setOpenIds(new Set());
 
-        <div className="mt-8 space-y-4">
+  return (
+    <main className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100 px-6 py-14">
+      <div className="max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-10">
+          <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900">
+            NFTBingo Whitepaper
+          </h1>
+
+          <p className="mt-4 text-slate-600 max-w-3xl mx-auto">
+            Read the full whitepaper below, or download the PDF.
+          </p>
+
+          {/* Actions */}
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a
+              href="/whitepaper/NFTBingo-Whitepaper.pdf"
+              download
+              className="cursor-pointer bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-8 py-3 rounded-xl shadow hover:shadow-lg hover:scale-[1.02] transition-all duration-300"
+            >
+              Download PDF
+            </a>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={expandAll}
+                 className="cursor-pointer bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-8 py-3 rounded-xl shadow hover:shadow-lg hover:scale-[1.02] transition-all duration-300"
+            >
+                Expand all
+              </button>
+              <button
+                type="button"
+                onClick={collapseAll}
+                 className="cursor-pointer bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-8 py-3 rounded-xl shadow hover:shadow-lg hover:scale-[1.02] transition-all duration-300"
+            >
+                Collapse all
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Accordion */}
+        <div className="space-y-4">
           {sections.map((section) => {
-            const open = openIds.has(section.id);
+            const open = isOpen(section.id);
             return (
               <div
                 key={section.id}
-                className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden"
+                className="bg-white rounded-2xl shadow border border-slate-100 overflow-hidden"
               >
                 <button
                   type="button"
                   onClick={() => toggle(section.id)}
-                  className="w-full flex items-center justify-between px-6 py-4 text-left"
+                  className="w-full text-left px-6 py-5 flex items-center justify-between gap-4 hover:bg-slate-50 transition"
+                  aria-expanded={open}
                 >
-                  <span className="text-lg font-bold text-slate-900">{section.title}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="h-3 w-3 rounded-full bg-gradient-to-r from-pink-600 to-indigo-600" />
+                    <h2 className="text-lg md:text-xl font-extrabold text-slate-900">
+                      {section.title}
+                    </h2>
+                  </div>
                   <Chevron open={open} />
                 </button>
 
