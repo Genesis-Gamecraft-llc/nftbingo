@@ -95,54 +95,158 @@ export default function RoadmapPage() {
     () => [
       {
         id: "phase-1",
-        title: "Phase 1 — Initial Rollout & Testing",
+        title: "Phase 1 — Initial Planning, Testing, and Infrastructure Rollout",
         subtitle:
-          "Foundation work: site, whitepaper, test deployments, and core workflows.",
+          "Validating testing environments, building infrastructure, and establishing a production-ready foundation.",
         theme: "pink",
         items: [
           { id: "p1-website", label: "Website UI/UX baseline complete", status: "done" },
           { id: "p1-whitepaper", label: "Whitepaper v1.0 published (web + downloadable PDF)", status: "done" },
           { id: "p1-roadmap-graphic", label: "Roadmap live (timeline + phases)", status: "done" },
-          { id: "p1-amoy-contract", label: "Amoy test NFT contract deployed & verified", status: "done" },
-          { id: "p1-mint-flow", label: "Mint flow working end-to-end from the website", status: "done" },
-          { id: "p1-metadata", label: "Metadata hosting + tokenURI reliably resolving", status: "done" },
-          { id: "p1-founder-art", label: "Founders Series card art created for Bingo! cards", status: "in-progress" },
-          { id: "p1-amoy-token", label: "Test token configured + faucet/test flow validated + token contract deployed", status: "planned" },
-          { id: "p1-basic-game-spec", label: "Gameplay spec locked (rules + patterns + resolution)", status: "planned" },
+          { id: "p1-amoy-contract", label: "Polygon Amoy Test NFT Contract Deployed & Verified (EVM Testing Phase)", status: "done" },
+          { id: "p1-solana-decision", label: "Primary Launch Chain Chosen - Solana", status: "done" },
+          { id: "p1-mint-program", label: "NFT Mint Program Implemented & Deployed (Solana Devnet)", status: "in-progress" },
+          { id: "p1-website-transition", label: "Website → Web App Transition (Wallet Integration Enabled)", status: "in-progress" },
+          { id: "p1-solana-devnet-mint", label: "End-to-End NFT Mint Flow Live (Web App ↔ Solana Devnet)", status: "in-progress" },
+          { id: "p1-metadata-resolution", label: "NFT Metadata Hosting + On-Chain URI Resolution Verified", status: "in-progress" },
+          { id: "p1-founders-art", label: "Founders Series Card Art Completed", status: "in-progress" },
+          { id: "p1-mint-program-deployed", label: "NFTBingo Mint Program Deployed (Solana Mainnet)", status: "planned" },
+          { id: "p1-mint-program-live", label: "Founders Series Mint Live! (Solana Mainnet)", status: "planned" },
         ],
       },
       {
         id: "phase-2",
-        title: "Phase 2 — Founder System & Ecosystem Design",
-        subtitle:
-          "Founder edition mechanics, staking/revenue concepts, and full game economy design.",
-        theme: "indigo",
+        title: "Phase 2 — Gameplay, Economy, and Ecosystem Buildout",
+  subtitle:
+    "Locking gameplay rules, validating token flows, and standing up a playable game ecosystem on Solana Devnet.",
+  theme: "indigo",
         items: [
-          { id: "p2-founder-cards", label: "Founder card bonuses finalized", status: "done" },
-          { id: "p2-founder-mint", label: "Founder mint page + supply controls", status: "in-progress" },
-          { id: "p2-staking-model", label: "Card staking/delegating bonuses model defined", status: "done" },
-          { id: "p2-economy-model", label: "Ecosystem economic model documented (fees, prizes, sustainability)", status: "done" },
-          { id: "p2-creator-partners", label: "Creator partnership pipeline defined (artwork → cards → rewards loop)", status: "done" },
-          { id: "p2-compliance-pass", label: "Risk & compliance considerations documented (jurisdiction approach)", status: "in-progress" },
-          { id: "p2-founders-launch", label: "Founders Edition card mint live", status: "planned" },
-          { id: "p2-testnet-alpha-games", label: "Game ecosystem live on Polygon amoy testnet - Alpha Testers Whitelist", status: "planned" },
-          { id: "p2-testnet-beta-games", label: "Game ecosystem live on Polygon amoy testnet - Beta Testers Whitelist", status: "planned" },
+          {
+      id: "p2-gameplay-spec",
+      label: "Gameplay specification locked (rules + patterns + resolution)",
+      status: "planned",
+    },
+    {
+      id: "p2-card-utility",
+      label: "Card utility & gameplay mechanics defined",
+      status: "planned",
+    },
+    {
+      id: "p2-creator-launchpad-pipeline",
+      label:
+        "Creator Launchpad partnership pipeline defined and built on web app (artwork → cards → rewards loop)",
+      status: "planned",
+    },
+    {
+      id: "p2-spl-test-token",
+      label: "SPL test token minted + faucet enabled (Solana Devnet)",
+      status: "planned",
+    },
+    {
+      id: "p2-token-flow-validation",
+      label: "Gameplay token flow validated (Solana Devnet)",
+      status: "planned",
+    },
+    {
+      id: "p2-economy-model",
+      label: "Ecosystem economic model documented",
+      status: "in-progress",
+    },
+    {
+      id: "p2-wallet-interaction-model",
+      label: "Gameplay wallet interaction model implemented",
+      status: "planned",
+    },
+    {
+      id: "p2-card-locking",
+      label: "Card locking & anti-abuse logic implemented",
+      status: "planned",
+    },
+    {
+      id: "p2-game-indexing",
+      label: "Game state indexing & history tracking implemented",
+      status: "planned",
+    },
+    {
+      id: "p2-compliance",
+      label: "Risk & compliance considerations documented",
+      status: "in-progress",
+    },
+    {
+      id: "p2-devnet-alpha",
+      label:
+        "Game ecosystem live on Solana Devnet — Alpha testers whitelist",
+      status: "planned",
+    },
+    {
+      id: "p2-devnet-beta",
+      label:
+        "Game ecosystem live on Solana Devnet — Beta testers whitelist",
+      status: "planned",
+    },
+    {
+      id: "p2-creator-launchpad-mint",
+      label: "Creator Launchpad mint live (Solana Mainnet)",
+      status: "planned",
+    },
         ],
       },
       {
         id: "phase-3",
-        title: "Phase 3 — Polygon Launch: Token + Games Go Live",
-        subtitle:
-          "Mainnet deployment, token launch, live games, and production reliability.",
-        theme: "fuchsia",
-        items: [
-          { id: "p3-mainnet-contracts", label: "Deploy production contracts on Polygon (mainnet)", status: "planned" },
-          { id: "p3-token-launch", label: "Token launch + liquidity plan executed", status: "planned" },
-          { id: "p3-game-live", label: "Game system live (rolling games, payouts, verification)", status: "planned" },
-          { id: "p3-wallet-polish", label: "Wallet UX polished (errors, network handling, clarity)", status: "planned" },
-          { id: "p3-prizes", label: "Prize system live (token prizes + NFT prize capability)", status: "planned" },
-          { id: "p3-monitoring", label: "Monitoring + incident plan (alerts, logging, rollback strategy)", status: "planned" },
-        ],
+  title: "Phase 3 — Token Launch & Games Go Live",
+  subtitle:
+    "Launching the native game token, finalizing production safeguards, and bringing NFTBingo games live on Solana mainnet.",
+  theme: "fuchsia",
+  items: [
+    {
+      id: "p3-token-launch",
+      label: "Native game token launched on Solana",
+      status: "planned",
+    },
+    {
+      id: "p3-liquidity",
+      label: "Liquidity added for player access",
+      status: "planned",
+    },
+    {
+      id: "p3-core-infra",
+      label: "Core game infrastructure live on mainnet",
+      status: "planned",
+    },
+    {
+      id: "p3-wallet-ux",
+      label:
+        "Wallet experience polished for players (clear transactions, smooth gameplay flow)",
+      status: "planned",
+    },
+    {
+      id: "p3-launch-controls",
+      label:
+        "Safety & launch controls enabled (rate limits, pause controls, safeguards)",
+      status: "planned",
+    },
+    {
+      id: "p3-prize-system",
+      label:
+        "Prize system live (token rewards + NFT prize support)",
+      status: "planned",
+    },
+    {
+      id: "p3-monitoring-support",
+      label: "Live game monitoring & support systems active",
+      status: "planned",
+    },
+    {
+      id: "p3-player-support",
+      label: "Player support & dispute resolution available",
+      status: "planned",
+    },
+    {
+      id: "p3-games-live",
+      label: "NFTBingo games go live 🎯♟️",
+      status: "planned",
+    },
+  ],
       },
       {
         id: "phase-4",
