@@ -19,7 +19,7 @@ export default function Home() {
         </h1>
         <p className="relative max-w-2xl mx-auto text-lg opacity-90 z-10">
           The world’s first decentralized bingo platform on{" "}
-          <span className="font-bold text-yellow-200">Polygon</span>, where
+          <span className="font-bold text-yellow-200">Solana</span>, where
           every card is an NFT and every game is provably fair.
         </p>
 
@@ -47,7 +47,7 @@ export default function Home() {
         <p className="text-lg text-slate-600 leading-relaxed">
           NFTBingo combines the fun of classic bingo with the transparency and
           ownership of blockchain NFTs. Buy NFT cards, join live games, and win 
-          crypto or NFT prizes. Built on Polygon for low fees, fast transactions,
+          crypto or NFT prizes. Built on Solana for low fees, fast transactions,
           and full decentralization.
         </p>
       </section>
@@ -76,7 +76,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-slate-200 py-8 text-center text-slate-500 text-sm">
-        © {new Date().getFullYear()} NFTBingo • Built on Polygon • nftbingo.net
+        © {new Date().getFullYear()} NFTBingo • Built on Solana • nftbingo.net
       </footer>
     </main>
   );

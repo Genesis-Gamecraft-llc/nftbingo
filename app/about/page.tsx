@@ -97,13 +97,13 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Why Polygon */}
+      {/* Why Solana */}
       <section className="max-w-5xl mx-auto py-16 px-6">
-        <h2 className="text-3xl font-bold mb-4 text-indigo-600">Why Polygon?</h2>
+        <h2 className="text-3xl font-bold mb-4 text-indigo-600">Why Solana?</h2>
         <p className="text-lg leading-relaxed">
-          Polygon offers fast transactions, low fees, and strong compatibility with Ethereum tooling,
-          which matters for a game that needs smooth gameplay loops and frequent interactions. It helps
-          keep participation practical for everyday players.
+          Solana offers fast finality, extremely low and predictable fees, and an execution model designed for high-frequency interactions.
+
+That matters for a game with constant player actions, where smooth gameplay loops and minimal friction are essential. It allows participation to stay simple and accessible for everyday players, not just crypto power users.
         </p>
       </section>
 
@@ -152,7 +152,7 @@ export default function AboutPage() {
 
         {/* Footer note */}
         <div className="mt-10 text-center text-sm text-slate-500">
-          © 2025 NFTBingo • Built on Polygon • nftbingo.net
+          © 2025 NFTBingo • Built on Solana • nftbingo.net
         </div>
 
       

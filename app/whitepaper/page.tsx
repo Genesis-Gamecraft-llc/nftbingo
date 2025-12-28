@@ -1177,7 +1177,7 @@ export default function WhitepaperPage() {
 
         {/* Footer note */}
         <div className="mt-10 text-center text-sm text-slate-500">
-          © 2025 NFTBingo • Built on Polygon • nftbingo.net • Whitepaper version 1.0
+          © 2025 NFTBingo • Built on Solana • nftbingo.net • Whitepaper version 1.0
         </div>
       </div>
     </main>
