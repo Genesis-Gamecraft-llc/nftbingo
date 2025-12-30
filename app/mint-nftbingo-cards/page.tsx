@@ -1,130 +1,74 @@
 "use client";
 
 import React, { useState } from "react";
-import { ethers } from "ethers";
-import nftBingoABI from "@/lib/nftBingoABI.json";
-import { CONTRACT_ADDRESS } from "@/lib/cardGenerator/config";
 
-const AMOY_CHAIN_ID = 80002;
+type MintResponse = {
+  ok: boolean;
+  error?: string;
+
+  assetAddress?: string;
+  metadataUri?: string;
+  imageUri?: string;
+  signature?: string;
+
+  explorer?: {
+    asset?: string;
+    tx?: string;
+  };
+
+  numbers?: number[];
+  columns?: {
+    B: number[];
+    I: number[];
+    N: number[];
+    G: number[];
+    O: number[];
+  };
+
+  // Optional debug info (if returned)
+  chosenBackgroundPath?: string;
+  chosenBackgroundId?: number;
+};
 
 export default function MintNFTBingoCardsPage() {
   const [status, setStatus] = useState<string>("");
   const [isMinting, setIsMinting] = useState<boolean>(false);
-  const [mintedTokenId, setMintedTokenId] = useState<number | null>(null);
+  const [mint, setMint] = useState<MintResponse | null>(null);
 
   async function handleMint() {
-    if (typeof window === "undefined" || !(window as any).ethereum) {
-      setStatus("No wallet found. Please install MetaMask.");
-      return;
-    }
-
-    setStatus("Connecting wallet…");
     setIsMinting(true);
-    setMintedTokenId(null);
+    setMint(null);
+    setStatus(
+      "Minting on Solana Devnet… randomly selecting a Founders background, generating numbers, rendering the card, uploading to Arweave…"
+    );
 
     try {
-      const browserProvider = new ethers.BrowserProvider(
-        (window as any).ethereum
-      );
+      const res = await fetch("/api/solana/mint-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // IMPORTANT: do NOT send backgroundPath — server will randomize
+        body: JSON.stringify({
+          name: "NFTBingo Founders (Devnet Test)",
+          description:
+            "Founders Series devnet test mint. Background is randomly selected. Image + metadata stored permanently on Arweave. Card numbers follow standard bingo rules.",
+        }),
+      });
 
-      // Make sure we're on Polygon Amoy
-      const network = await browserProvider.getNetwork();
-      const currentChainId = Number(network.chainId);
-      if (currentChainId !== AMOY_CHAIN_ID) {
-        setStatus("Please switch your wallet to Polygon Amoy testnet.");
-        setIsMinting(false);
+      const data = (await res.json()) as MintResponse;
+
+      if (!res.ok || !data.ok) {
+        const msg = data?.error || `Mint failed (HTTP ${res.status}).`;
+        setStatus(msg);
+        setMint(data);
         return;
       }
 
-      const signer = await browserProvider.getSigner();
-      const contract = new ethers.Contract(
-        CONTRACT_ADDRESS,
-        nftBingoABI as any,
-        signer
+      setMint(data);
+      setStatus(
+        "Mint successful! Your devnet test NFT is minted, and the image/metadata are stored on Arweave."
       );
-
-      const seriesId = BigInt(1); // your only series for now
-
-      // ---------- Gas estimation ----------
-      let gasLimitOverride: bigint | undefined = undefined;
-
-      try {
-        const estimatedGas: bigint = await contract.mintCard.estimateGas(
-          seriesId
-        );
-        // bump by 20% to be safe
-        const bumpNumerator = BigInt(12);
-        const bumpDenominator = BigInt(10);
-        gasLimitOverride =
-          (estimatedGas * bumpNumerator) / bumpDenominator;
-
-        console.log(
-          "[mint] Estimated gas:",
-          estimatedGas.toString(),
-          "Using gasLimit override:",
-          gasLimitOverride.toString()
-        );
-      } catch (gasErr) {
-        console.warn("[mint] Gas estimation failed, sending without override");
-        console.warn(gasErr);
-      }
-
-      setStatus("Sending transaction…");
-
-      const tx = await contract.mintCard(
-        seriesId,
-        gasLimitOverride ? { gasLimit: gasLimitOverride } : {}
-      );
-
-      console.log("[mint] Tx sent:", tx.hash);
-      setStatus("Transaction sent. Waiting for confirmation…");
-
-      const receipt = await tx.wait();
-      console.log("[mint] Tx confirmed:", receipt);
-
-      // ---------- Parse logs to find minted tokenId ----------
-      const iface = new ethers.Interface(nftBingoABI as any);
-      let newTokenId: number | null = null;
-
-      for (const log of receipt.logs) {
-        try {
-          const parsed = iface.parseLog(log);
-
-          // IMPORTANT: parsed may be null
-          if (!parsed) continue;
-
-          if (parsed.name === "TransferSingle") {
-            // ERC-1155 TransferSingle(operator, from, to, id, value)
-            const idBig = parsed.args["id"] as bigint;
-            newTokenId = Number(idBig);
-            break;
-          }
-        } catch (e) {
-          // Not our event, ignore
-        }
-      }
-
-      if (newTokenId === null) {
-        console.warn(
-          "[mint] Mint succeeded but tokenId could not be parsed from logs"
-        );
-        setStatus("Mint succeeded, but token ID could not be parsed.");
-      } else {
-        console.log("[mint] Mint successful, tokenId =", newTokenId);
-        setStatus(`Mint successful! Token #${newTokenId}`);
-        setMintedTokenId(newTokenId);
-      }
     } catch (err: any) {
-      console.error("[mint] Mint error:", err);
-
-      // Try to show the raw RPC error if present
-      const rawMsg =
-        err?.error?.message ||
-        err?.data?.message ||
-        err?.message ||
-        "Unknown error while sending transaction.";
-
-      setStatus(`Transaction failed: ${rawMsg}`);
+      setStatus(err?.message ?? "Unknown error while minting.");
     } finally {
       setIsMinting(false);
     }
@@ -134,22 +78,21 @@ export default function MintNFTBingoCardsPage() {
     <main className="min-h-screen bg-white">
       <section className="max-w-4xl mx-auto py-16 px-4">
         <h1 className="text-4xl font-extrabold text-center mb-4 text-gray-900">
-          Mint NFTBingo Cards
+          Mint NFTBingo Founders Cards
         </h1>
+
         <p className="text-center text-gray-600 mb-10 max-w-2xl mx-auto">
-          Mint a random, on-chain NFTBingo card on the Polygon Amoy test
-          network. Each click mints a new card and then renders the full PNG
-          using the numbers and background stored in our smart contract.
+          This page mints <span className="font-semibold">test NFTs</span> on the{" "}
+          <span className="font-semibold">Solana Devnet</span>. It is only intended for testing purposes. None of these test assets will have financial value on the Mainnet. Feel free to test the generator as many times as you like!
         </p>
 
         <div className="bg-white rounded-3xl shadow-lg px-8 py-10 mb-10 border border-pink-100">
           <h2 className="text-2xl font-bold text-center mb-2">
-            Step 1 — Mint &amp; Generate Your Card
+            Mint a Random Founders Card (Devnet)
           </h2>
+
           <p className="text-center text-gray-600 mb-6">
-            Clicking this button will mint a brand new NFTBingo card to your
-            connected wallet, then render the card using the on-chain numbers.
-            There is no preview step. Once you accept the transaction, your mint is final.
+            Click to generate one randomly selected Founders Series NFTBingo card with randomly chosen bingo numbers. 
           </p>
 
           <div className="flex flex-col items-center gap-4">
@@ -158,39 +101,139 @@ export default function MintNFTBingoCardsPage() {
               disabled={isMinting}
               className="px-8 py-3 rounded-full bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white font-semibold shadow-md transition"
             >
-              {isMinting ? "Minting…" : "Mint NFTBingo Card"}
+              {isMinting ? "Minting…" : "Mint Random Founders Card"}
             </button>
 
             {status && (
-              <p className="text-sm text-gray-700 text-center max-w-md">
+              <p className="text-sm text-gray-700 text-center max-w-2xl">
                 {status}
               </p>
             )}
           </div>
 
-          {mintedTokenId !== null && (
-            <div className="mt-8 flex flex-col items-center">
-              <h3 className="font-semibold mb-2">
-                Latest Minted Card (Token #{mintedTokenId})
+          {mint?.ok && mint.imageUri && (
+            <div className="mt-10">
+              <h3 className="text-xl font-bold text-center mb-4">
+                Latest Mint Result
               </h3>
-              {/* Uses your existing card-image API */}
-              <img
-                src={`/api/card-image/${mintedTokenId}`}
-                alt={`NFTBingo card #${mintedTokenId}`}
-                className="w-full max-w-md rounded-xl shadow"
-              />
+
+              <div className="flex flex-col items-center gap-4">
+                <img
+                  src={mint.imageUri}
+                  alt="Minted NFTBingo card"
+                  className="w-full max-w-md rounded-xl shadow"
+                />
+
+                <div className="w-full max-w-2xl bg-gray-50 border border-gray-100 rounded-2xl p-5">
+                  <div className="text-sm text-gray-800 space-y-2">
+                    {mint.chosenBackgroundPath && (
+                      <div>
+                        <span className="font-semibold">Chosen Background:</span>{" "}
+                        <span className="font-mono break-all">{mint.chosenBackgroundPath}</span>
+                      </div>
+                    )}
+
+                    {mint.assetAddress && (
+                      <div>
+                        <span className="font-semibold">Asset Address:</span>{" "}
+                        <span className="font-mono break-all">{mint.assetAddress}</span>
+                      </div>
+                    )}
+
+                    {mint.signature && (
+                      <div>
+                        <span className="font-semibold">Tx Signature:</span>{" "}
+                        <span className="font-mono break-all">{mint.signature}</span>
+                      </div>
+                    )}
+
+                    {mint.metadataUri && (
+                      <div>
+                        <span className="font-semibold">Metadata (Arweave):</span>{" "}
+                        <a
+                          href={mint.metadataUri}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-pink-600 hover:underline break-all"
+                        >
+                          {mint.metadataUri}
+                        </a>
+                      </div>
+                    )}
+
+                    {mint.imageUri && (
+                      <div>
+                        <span className="font-semibold">Image (Arweave):</span>{" "}
+                        <a
+                          href={mint.imageUri}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-pink-600 hover:underline break-all"
+                        >
+                          {mint.imageUri}
+                        </a>
+                      </div>
+                    )}
+
+                    {(mint.explorer?.tx || mint.explorer?.asset) && (
+                      <div className="pt-2 flex flex-col gap-1">
+                        {mint.explorer?.tx && (
+                          <a
+                            href={mint.explorer.tx}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-pink-600 hover:underline break-all"
+                          >
+                            View Transaction on Solana Explorer (Devnet)
+                          </a>
+                        )}
+                        {mint.explorer?.asset && (
+                          <a
+                            href={mint.explorer.asset}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-pink-600 hover:underline break-all"
+                          >
+                            View Asset Address on Solana Explorer (Devnet)
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {mint.columns && (
+                  <div className="w-full max-w-2xl bg-white border border-gray-100 rounded-2xl p-5">
+                    <h4 className="font-semibold mb-3">Bingo Columns (Quick Check)</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 text-sm">
+                      {(["B", "I", "N", "G", "O"] as const).map((k) => (
+                        <div
+                          key={k}
+                          className="bg-gray-50 rounded-xl p-3 border border-gray-100"
+                        >
+                          <div className="font-bold mb-2">{k}</div>
+                          <div className="font-mono whitespace-pre-wrap">
+                            {(mint.columns?.[k] ?? [])
+                              .map((n) => (n === 0 ? "FREE" : String(n)))
+                              .join(", ")}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
 
         <div className="bg-gray-50 rounded-3xl px-8 py-8 border border-gray-100">
           <h2 className="text-xl font-bold mb-2 text-center">
-            Polygon Amoy Test Network Notice
+            Solana Devnet Test Notice
           </h2>
           <p className="text-center text-gray-600 max-w-2xl mx-auto">
-            This mint process is currently set on the Polygon Amoy test network.
-            After minting, you can view your NFTBingo cards in your wallet, but 
-            they are test network NFTs only and will not be available for gameplay.
+            This page mints on <span className="font-semibold">Solana Devnet</span> only.
+            These are test NFTs to validate the Founders mint pipeline and website UX. These assets will never be available for gameplay on NFTBingo.
           </p>
         </div>
       </section>

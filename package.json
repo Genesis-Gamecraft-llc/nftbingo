@@ -9,9 +9,17 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@metaplex-foundation/mpl-core": "^1.7.0",
+    "@metaplex-foundation/mpl-token-metadata": "^3.4.0",
+    "@metaplex-foundation/mpl-toolbox": "^0.10.0",
+    "@metaplex-foundation/umi": "^1.4.1",
+    "@metaplex-foundation/umi-bundle-defaults": "^1.4.1",
+    "@metaplex-foundation/umi-uploader-irys": "^1.4.2",
     "@napi-rs/canvas": "^0.1.83",
     "@rainbow-me/rainbowkit": "^2.2.9",
+    "@solana/web3.js": "^1.98.4",
     "@tanstack/react-query": "^5.90.5",
+    "bs58": "^6.0.0",
     "ethers": "^6.16.0",
     "framer-motion": "^12.23.24",
     "html2canvas": "^1.4.1",
