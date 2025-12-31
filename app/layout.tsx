@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
 import { Providers } from "./providers";
+import SolanaProviders from "./solana-providers";
 
 export const metadata: Metadata = {
   title: "NFTBingo – Own. Play. Win. Earn",
@@ -28,7 +29,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "NFTBingo – Own. Play. Win. Earn",
-    description: "Own NFT bingo cards. Play fair games. Win prizes. Earn rewards on NFTBingo.",
+    description:
+      "Own NFT bingo cards. Play fair games. Win prizes. Earn rewards on NFTBingo.",
     images: ["/images/social-preview.png"],
   },
 };
@@ -42,10 +44,11 @@ export default function RootLayout({
     <html lang="en">
       <body className="bg-white text-slate-900">
         <Providers>
-  <Navbar />
-  <div className="pt-20">{children}</div>
-</Providers>
-
+          <SolanaProviders>
+            <Navbar />
+            <div className="pt-20">{children}</div>
+          </SolanaProviders>
+        </Providers>
       </body>
     </html>
   );

@@ -7,12 +7,15 @@ import bs58 from "bs58";
 import { NextResponse } from "next/server";
 
 import { create } from "@metaplex-foundation/mpl-core";
-import { createGenericFile, generateSigner } from "@metaplex-foundation/umi";
+import { createGenericFile, generateSigner, publicKey } from "@metaplex-foundation/umi";
 
 import { getUmiServer } from "@/lib/solana/umi.server";
 import { generateCardImage } from "@/lib/cardGenerator/generateImage";
 
 type MintRequest = {
+  // REQUIRED: wallet public key (base58) from Phantom/adapter
+  owner: string;
+
   name?: string;
   description?: string;
 
@@ -53,6 +56,7 @@ function pickUnique(min: number, max: number, count: number): number[] {
   while (chosen.size < count) chosen.add(randInt(min, max));
   return Array.from(chosen);
 }
+
 function generateBingoGridRowMajor25() {
   const B = pickUnique(1, 15, 5);
   const I = pickUnique(16, 30, 5);
@@ -88,7 +92,22 @@ function parseBgIdFromPath(backgroundRel: string) {
 export async function POST(req: Request) {
   try {
     const umi = getUmiServer();
-    const body = (await req.json().catch(() => ({}))) as MintRequest;
+    const body = (await req.json().catch(() => ({}))) as Partial<MintRequest>;
+
+    // --- Require owner (user wallet) ---
+    if (!body.owner || typeof body.owner !== "string") {
+      return NextResponse.json(
+        { ok: false, error: "Missing owner. Connect your Phantom wallet and try again." },
+        { status: 400 }
+      );
+    }
+
+    let ownerPk;
+    try {
+      ownerPk = publicKey(body.owner);
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid owner public key." }, { status: 400 });
+    }
 
     // Server decides the background (unless you explicitly pass one for internal testing)
     let chosen = pickFoundersBackgroundPath();
@@ -163,18 +182,20 @@ export async function POST(req: Request) {
       },
     });
 
-    // Mint Core Asset
+    // Mint Core Asset (OWNED BY USER WALLET)
     const assetSigner = generateSigner(umi);
     const result = await create(umi, {
       asset: assetSigner,
       name,
       uri: metadataUri,
+      owner: ownerPk, // <-- the key change
     }).sendAndConfirm(umi);
 
     const sig58 = bs58.encode(result.signature);
 
     return NextResponse.json({
       ok: true,
+      owner: body.owner,
       assetAddress: assetSigner.publicKey.toString(),
       metadataUri,
       imageUri,

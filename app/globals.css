@@ -24,3 +24,32 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* NFTBingo: style Solana Wallet Adapter button to match our gradient CTA */
+.nftbingo-solana-btn .wallet-adapter-button {
+  background: linear-gradient(to right, #db2777, #c026d3, #4f46e5) !important; /* pink -> fuchsia -> indigo */
+  color: white !important;
+  font-weight: 600 !important;
+  padding: 0.5rem 1rem !important; /* px-4 py-2 */
+  border-radius: 0.75rem !important; /* rounded-xl */
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+  height: auto !important;
+  line-height: 1.25rem !important;
+  transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease !important;
+}
+
+.nftbingo-solana-btn .wallet-adapter-button:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 10px 15px rgba(0,0,0,0.12) !important;
+  opacity: 0.95 !important;
+}
+
+.nftbingo-solana-btn .wallet-adapter-button:active {
+  transform: scale(1.02) !important;
+}
+
+/* Dropdown + modal buttons should stay consistent */
+.nftbingo-solana-btn .wallet-adapter-dropdown-list,
+.wallet-adapter-modal-wrapper {
+  font-family: inherit;
+}
