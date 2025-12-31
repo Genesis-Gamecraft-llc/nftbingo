@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import SolanaConnectButton from "@/components/SolanaConnectButton";
 
 type MintResponse = {
@@ -29,7 +30,6 @@ type MintResponse = {
     O: number[];
   };
 
-  // Optional debug info (if returned)
   chosenBackgroundPath?: string;
   chosenBackgroundId?: number;
   backgroundFallbackUsed?: boolean;
@@ -41,13 +41,97 @@ function shortAddr(addr: string, front = 6, back = 4) {
   return `${addr.slice(0, front)}…${addr.slice(-back)}`;
 }
 
+function formatSol(lamports?: number | null) {
+  if (lamports === null || lamports === undefined) return "—";
+  return (lamports / LAMPORTS_PER_SOL).toFixed(4);
+}
+
 export default function MintNFTBingoCardsPage() {
+  const { connection } = useConnection();
   const { publicKey } = useWallet();
+
   const owner = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
   const [status, setStatus] = useState<string>("");
   const [isMinting, setIsMinting] = useState<boolean>(false);
   const [mint, setMint] = useState<MintResponse | null>(null);
+
+  const [isAirdropping, setIsAirdropping] = useState(false);
+  const [nextAirdropAt, setNextAirdropAt] = useState<number>(0);
+
+  const [balanceLamports, setBalanceLamports] = useState<number | null>(null);
+
+  async function refreshBalance() {
+    if (!publicKey) {
+      setBalanceLamports(null);
+      return;
+    }
+    try {
+      const lamports = await connection.getBalance(publicKey, "confirmed");
+      setBalanceLamports(lamports);
+    } catch {
+      // don't spam status for balance polling
+    }
+  }
+
+  useEffect(() => {
+    refreshBalance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [owner]);
+
+  async function handleAirdrop() {
+    if (!publicKey) {
+      setStatus("Connect your Solana wallet first (Devnet).");
+      return;
+    }
+
+    const now = Date.now();
+    if (now < nextAirdropAt) {
+      const secs = Math.ceil((nextAirdropAt - now) / 1000);
+      setStatus(`Faucet cooldown active. Try again in ${secs}s.`);
+      return;
+    }
+
+    setIsAirdropping(true);
+    setStatus("Requesting Devnet SOL…");
+
+    try {
+      // Smaller amount reduces how often you hit rate limits
+      const amountLamports = Math.floor(0.2 * LAMPORTS_PER_SOL);
+
+      const sig = await connection.requestAirdrop(publicKey, amountLamports);
+
+      const latest = await connection.getLatestBlockhash("confirmed");
+      await connection.confirmTransaction(
+        { signature: sig, ...latest },
+        "confirmed"
+      );
+
+      await refreshBalance();
+      setStatus("Devnet SOL received. You can mint now.");
+      setNextAirdropAt(Date.now() + 30_000);
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      const lower = msg.toLowerCase();
+      const isRateLimited =
+        msg.includes("429") ||
+        lower.includes("rate limit") ||
+        lower.includes("too many") ||
+        lower.includes("airdrop request failed");
+
+      if (isRateLimited) {
+        setStatus(
+          "Devnet faucet is rate-limited (429) or you hit a daily faucet limit. Wait a few minutes and try again, or use an alternate faucet link below."
+        );
+        setNextAirdropAt(Date.now() + 90_000);
+      } else {
+        setStatus(msg);
+        setNextAirdropAt(Date.now() + 30_000);
+      }
+    } finally {
+      setIsAirdropping(false);
+    }
+  }
 
   async function handleMint() {
     if (!owner) {
@@ -65,10 +149,6 @@ export default function MintNFTBingoCardsPage() {
       const res = await fetch("/api/solana/mint-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-
-        // IMPORTANT:
-        // - DO NOT send backgroundPath — server randomizes (and falls back to bg0 if missing).
-        // - We DO send owner so the server mints to the connected wallet.
         body: JSON.stringify({
           owner,
           name: "NFTBingo Founders (Devnet Test)",
@@ -88,8 +168,10 @@ export default function MintNFTBingoCardsPage() {
 
       setMint(data);
       setStatus(
-        "Mint successful! Your devnet test NFT is minted to your connected wallet, and the image/metadata are stored on Arweave."
+        "Mint successful! Your devnet test NFT is minted to your connected wallet."
       );
+
+      await refreshBalance();
     } catch (err: any) {
       setStatus(err?.message ?? "Unknown error while minting.");
     } finally {
@@ -106,9 +188,8 @@ export default function MintNFTBingoCardsPage() {
 
         <p className="text-center text-gray-600 mb-10 max-w-2xl mx-auto">
           This page mints <span className="font-semibold">test NFTs</span> on the{" "}
-          <span className="font-semibold">Solana Devnet</span>. It is only intended
-          for testing purposes. None of these test assets will have financial value
-          on the Mainnet. Feel free to test the generator as many times as you like!
+          <span className="font-semibold">Solana Devnet</span>. Backgrounds are{" "}
+          <span className="font-semibold">randomly selected</span> from the Founders pool.
         </p>
 
         <div className="bg-white rounded-3xl shadow-lg px-8 py-10 mb-10 border border-pink-100">
@@ -116,38 +197,57 @@ export default function MintNFTBingoCardsPage() {
             Mint a Random Founders Card (Devnet)
           </h2>
 
-          <p className="text-center text-gray-600 mb-6">
-            Click to generate one randomly selected Founders Series NFTBingo card
-            with randomly chosen bingo numbers.
+          <p className="text-center text-gray-600 mb-8">
+            Connect your wallet, grab Devnet SOL if needed, then mint.
           </p>
 
-          <div className="flex flex-col items-center gap-4">
-            <div className="flex flex-col items-center gap-2">
-              <SolanaConnectButton />
-              <div className="text-xs text-gray-600">
-                {owner ? (
-                  <>
-                    Connected:{" "}
-                    <span className="font-mono font-semibold">
-                      {shortAddr(owner)}
-                    </span>
-                  </>
-                ) : (
-                  <>Not connected</>
-                )}
+          {/* Vertical inline stack */}
+          <div className="flex flex-col items-center gap-3">
+            <SolanaConnectButton />
+
+            <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 text-center">
+              <div className="text-xs text-gray-500">Connected Wallet</div>
+              <div className="mt-1 font-mono text-sm text-gray-800">
+                {owner ? owner : "Not connected"}
+              </div>
+
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <span className="text-xs text-gray-500">Balance:</span>
+                <span className="font-mono text-sm font-semibold text-gray-800">
+                  {owner ? `${formatSol(balanceLamports)} SOL` : "—"}
+                </span>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2">
+                <button
+                  onClick={handleAirdrop}
+                  disabled={!owner || isAirdropping}
+                  className="w-full px-6 py-3 rounded-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-semibold shadow-md transition"
+                >
+                  {isAirdropping ? "Requesting…" : "Get 0.2 Devnet SOL (Faucet)"}
+                </button>
+
+                <a
+                  className="text-xs text-pink-600 hover:underline"
+                  href="https://faucet.solana.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Alternate faucet: faucet.solana.com
+                </a>
               </div>
             </div>
 
             <button
               onClick={handleMint}
               disabled={isMinting || !owner}
-              className="px-8 py-3 rounded-full bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white font-semibold shadow-md transition"
+              className="mt-2 w-full max-w-md px-8 py-3 rounded-full bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white font-semibold shadow-md transition"
             >
               {isMinting ? "Minting…" : "Mint Random Founders Card"}
             </button>
 
             {status && (
-              <p className="text-sm text-gray-700 text-center max-w-2xl">
+              <p className="text-sm text-gray-700 text-center max-w-2xl mt-2">
                 {status}
               </p>
             )}
@@ -183,6 +283,9 @@ export default function MintNFTBingoCardsPage() {
                         <span className="font-mono break-all">
                           {mint.chosenBackgroundPath}
                         </span>
+                        {mint.backgroundFallbackUsed ? (
+                          <span className="ml-2 text-xs text-amber-700">(fallback used)</span>
+                        ) : null}
                       </div>
                     )}
 
@@ -190,15 +293,6 @@ export default function MintNFTBingoCardsPage() {
                       <div>
                         <span className="font-semibold">Background ID:</span>{" "}
                         <span className="font-mono">{mint.chosenBackgroundId}</span>
-                      </div>
-                    )}
-
-                    {typeof mint.backgroundFallbackUsed === "boolean" && (
-                      <div>
-                        <span className="font-semibold">Fallback Used:</span>{" "}
-                        <span className="font-mono">
-                          {String(mint.backgroundFallbackUsed)}
-                        </span>
                       </div>
                     )}
 
@@ -313,10 +407,8 @@ export default function MintNFTBingoCardsPage() {
             Solana Devnet Test Notice
           </h2>
           <p className="text-center text-gray-600 max-w-2xl mx-auto">
-            This page mints on <span className="font-semibold">Solana Devnet</span>{" "}
-            only. These are test NFTs to validate the Founders mint pipeline and
-            website UX. Wallets may label them as “Unverified Collection” until we
-            set up and verify a proper collection on-chain.
+            Devnet only. These are test NFTs to validate the Founders mint pipeline and website UX.
+            Wallets may label them as “Unverified Collection” until we set up and verify a collection.
           </p>
         </div>
       </section>
