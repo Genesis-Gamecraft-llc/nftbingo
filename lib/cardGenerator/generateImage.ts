@@ -1,118 +1,113 @@
 // lib/cardGenerator/generateImage.ts
-
-import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
+import fs from "fs";
 import path from "path";
-import {
-  CARD_W,
-  CARD_H,
-  GRID_X,
-  GRID_Y,
-  CELL_W,
-  CELL_H,
-} from "./config";
+import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
 
-// ---- FONT SETUP ----
-// 1) Put your TTF at: public/fonts/NFTBingoNumbers.ttf
-// 2) This alias must match what we use in ctx.font:
-const FONT_FAMILY = "NFTBingoNumbers";
+let fontRegistered = false;
 
-// Register the font once at module load so both localhost and Vercel
-// have a known font to render with.
-(() => {
+function ensureFontRegistered() {
+  if (fontRegistered) return;
+
+  const fontPath = path.join(process.cwd(), "public", "fonts", "NFTBingoNumbers.ttf");
   try {
-    const fontPath = path.join(
-      process.cwd(),
-      "public",
-      "fonts",
-      "NFTBingoNumbers.ttf"
-    );
-
-    // Only register if not already present
-    if (!GlobalFonts.has(FONT_FAMILY)) {
-      const ok = GlobalFonts.registerFromPath(fontPath, FONT_FAMILY);
-      if (!ok) {
-        console.warn(
-          `⚠️ Failed to register font at ${fontPath} for family ${FONT_FAMILY}`
-        );
-      } else {
-        console.log(
-          `✅ Registered canvas font "${FONT_FAMILY}" from ${fontPath}`
-        );
-      }
+    if (fs.existsSync(fontPath)) {
+      GlobalFonts.registerFromPath(fontPath, "NFTBingoNumbers");
+      // keep your existing console output behavior
+      console.log(`✅ Registered canvas font "NFTBingoNumbers" from ${fontPath}`);
+    } else {
+      console.log(`⚠️ Font not found at ${fontPath} (continuing with default font).`);
     }
-  } catch (err) {
-    console.warn("⚠️ Error registering canvas font:", err);
+  } catch (e: any) {
+    console.log("⚠️ Font register failed (continuing):", e?.message ?? e);
   }
-})();
+
+  fontRegistered = true;
+}
 
 /**
- * Generate a bingo card image as a PNG buffer.
+ * Generates a bingo card image with numbers over a background.
  *
- * - numbers: 25 values from the contract (row-major 5x5)
- * - backgroundId: which bgX.png to use from /public/backgrounds/series1
- *   (falls back to bg0.png if that file doesn’t exist)
+ * Backwards compatible:
+ * - Founders/Series calls: generateCardImage(numbers, bgId)
+ *
+ * New:
+ * - VIP calls: generateCardImage(numbers, bgId, "vip")
  */
 export async function generateCardImage(
   numbers: number[],
-  backgroundId: number
+  bgId: number,
+  folder: "series1" | "vip" = "series1"
 ): Promise<Buffer> {
+  ensureFontRegistered();
+
+  // Safety
   if (!Array.isArray(numbers) || numbers.length !== 25) {
-    throw new Error(`Expected 25 numbers, got ${numbers.length}`);
+    throw new Error(`generateCardImage(): expected numbers length 25, got ${numbers?.length}`);
   }
 
-  // 1) Create canvas & context
-  const canvas = createCanvas(CARD_W, CARD_H);
+  // Background path (VIP is its own folder)
+  const backgroundsDir = path.join(process.cwd(), "public", "backgrounds", folder);
+  const primaryBgPath = path.join(backgroundsDir, `bg${bgId}.png`);
+  const fallbackBgPath = path.join(backgroundsDir, `bg0.png`);
+
+  const bgPath = fs.existsSync(primaryBgPath) ? primaryBgPath : fallbackBgPath;
+
+  if (!fs.existsSync(bgPath)) {
+    throw new Error(
+      `Missing background. Tried:\n- ${primaryBgPath}\n- ${fallbackBgPath}\nFolder: ${folder}`
+    );
+  }
+
+  const img = await loadImage(bgPath);
+
+  // Use the background size as canvas size
+  const width = img.width;
+  const height = img.height;
+
+  const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // 2) Draw background
-  const backgroundsDir = path.join(
-    process.cwd(),
-    "public",
-    "backgrounds",
-    "series1"
-  );
+  // Draw background
+  ctx.drawImage(img, 0, 0, width, height);
 
-  const requestedBg = path.join(backgroundsDir, `bg${backgroundId}.png`);
-  const fallbackBg = path.join(backgroundsDir, "bg0.png");
+  // ---- Number rendering ----
+  // These values assume your template (grid area) matches what you already had working.
+  // If your layout shifts, tweak these 4 numbers only.
+  const gridLeft = Math.round(width * 0.06);
+  const gridTop = Math.round(height * 0.36);
+  const gridWidth = Math.round(width * 0.88);
+  const gridHeight = Math.round(height * 0.58);
 
-  let bgImage;
-  try {
-    bgImage = await loadImage(requestedBg);
-  } catch {
-    console.warn(
-      `⚠️ Background bg${backgroundId}.png not found. Falling back to bg0.png`
-    );
-    bgImage = await loadImage(fallbackBg);
-  }
+  const cellW = gridWidth / 5;
+  const cellH = gridHeight / 5;
 
-  ctx.drawImage(bgImage, 0, 0, CARD_W, CARD_H);
-
-  // 3) Text styling
+  // Font setup
+  const fontSize = Math.round(Math.min(cellW, cellH) * 0.42);
+  ctx.font = `${fontSize}px NFTBingoNumbers, Arial, sans-serif`;
+  ctx.fillStyle = "#111";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#000000";
-  // Use the registered font family so it works on Vercel
-  ctx.font = `bold 150px ${FONT_FAMILY}`;
 
-  // 4) Draw 5x5 numbers (skip center FREE)
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 5; col++) {
-      const idx = row * 5 + col;
+  // Slight shadow for readability
+  ctx.shadowColor = "rgba(0,0,0,0.15)";
+  ctx.shadowBlur = Math.round(fontSize * 0.08);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.round(fontSize * 0.05);
+
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      const idx = r * 5 + c;
       const value = numbers[idx];
 
-      // Skip center cell (index 12) so FREE/logo shows
-      if (idx === 12) continue;
+      // FREE is usually encoded as 0 in your system
+      const label = value === 0 ? "FREE" : String(value);
 
-      // If contract encodes FREE as 0, also skip zeros just in case
-      if (!Number.isFinite(value) || value <= 0) continue;
+      const x = gridLeft + c * cellW + cellW / 2;
+      const y = gridTop + r * cellH + cellH / 2;
 
-      const x = GRID_X + col * CELL_W + CELL_W / 2;
-      const y = GRID_Y + row * CELL_H + CELL_H / 2;
-
-      ctx.fillText(String(value), x, y);
+      ctx.fillText(label, x, y);
     }
   }
 
-  // 5) Return PNG buffer
   return canvas.toBuffer("image/png");
 }

@@ -1,5 +1,3 @@
-import "server-only";
-
 import fs from "fs";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { keypairIdentity } from "@metaplex-foundation/umi";

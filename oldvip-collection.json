@@ -1,0 +1,9 @@
+{
+  "network": "mainnet-beta",
+  "createdAt": "2026-01-05T02:33:49.304Z",
+  "collectionAddress": "G6jFjjkjAvQqUHr6P8YWkqJuUQxe719ygip9aQhDSpKq",
+  "name": "NFTBingo VIP Collection",
+  "description": "Official collection for NFTBingo VIP 1-of-1 cards. Image + metadata stored permanently on Arweave.",
+  "imageUri": "https://gateway.irys.xyz/yInaq3FC4enUuOwM3W5ZPW1FlnjE25zSQYYO_ZANdiU",
+  "metadataUri": "https://gateway.irys.xyz/pMDsijIwAYaEX4T3IPiHJ2tLUvgNBoXaY1QP7it0tiA"
+}

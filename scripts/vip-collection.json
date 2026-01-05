@@ -1,0 +1,11 @@
+{
+  "name": "NFTBingo VIP Collection",
+  "symbol": "NFTBINGO-VIP",
+  "description": "Official collection for NFTBingo VIP Core cards.",
+  "collectionAddress": "DCnCRpzi4xyf5pSxrPGWv7QvhDE89QQePWhNrBDApL7D",
+  "imageUri": "https://gateway.irys.xyz/ifLoaI8KLBViYzmJtMt0GQaAvUYAu7pJzDAI6UG4Pek",
+  "metadataUri": "https://gateway.irys.xyz/3IhD5MU7fw7O9h0DkkiFbnT-ED0dhwao7UzXNl32nOE",
+  "signatureBase64": "Rwym2+a41HckgJ1enHbSWxkiKN/NoSClVxYv7v+q8aKhdX83rEAL35dtYaJO4R6ERpIOumOhPCDcumejwhzIDQ==",
+  "explorer": "https://explorer.solana.com/address/DCnCRpzi4xyf5pSxrPGWv7QvhDE89QQePWhNrBDApL7D",
+  "createdAt": "2026-01-05T05:31:57.479Z"
+}

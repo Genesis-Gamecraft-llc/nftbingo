@@ -1,0 +1,45 @@
+{
+  "minted": {
+    "VIP-0001": {
+      "asset": "4MvuW44TtDFKoYwntQhEkoqXz6Z4DHMxBodBaCWGQKAy",
+      "tx": "2DoHh6Q9zw2Dx2NKqnrxgWdxkpF46CNtw54oxHBz2ktVbLdmsdAzbPy1L3P3aXFpaeoubVyYTL3qjbEQq5JvjmQY",
+      "when": "2026-01-04T11:53:35.101Z",
+      "collection": "DCnCRpzi4xyf5pSxrPGWv7QvhDE89QQePWhNrBDApL7D",
+      "collectionBackfilledAt": "2026-01-05T05:38:17.576Z",
+      "collectionTx": "NAhn4dAFjnDb6L93C6Ydv3CaQQZEqWRxZDJKkYxxGjdt8YMnASYk4AHdVT5zcmcThXewdo7btWTRcxf4kCStxtT",
+      "collectionBackfillSigBase64": "EkD9reWDZPNYk/IkLm1YsA9LyYvgAXeq5e8rs7wXtBBhB4aRz1xYporFmSvyF78BVyoc43hQHjqMTODp5ZcdDA=="
+    },
+    "VIP-0002": {
+      "asset": "DfRhHqNuvC6wSTRtLhdP9FVGR4RkeXJ4Byy94Wgacgkj",
+      "tx": "2DLJQMoSAxqgASYKLx7maRtHRPz5yt3NQK1RbuYCX1iazuqQe8p8e3F9CmMGy2kHmFN2st5TVfw4rXGiBig6GbcA",
+      "when": "2026-01-04T12:11:11.724Z",
+      "collection": "DCnCRpzi4xyf5pSxrPGWv7QvhDE89QQePWhNrBDApL7D",
+      "collectionBackfilledAt": "2026-01-05T05:38:32.071Z",
+      "collectionTx": "2tssPNrmALpuoqtjccRAYVxRomive3gMsjAWFW6mTiNMx1JiBDPPTANiVXDaHXo8YNP7SS1s7BddrEsjFCHvHPZa",
+      "collectionBackfillSigBase64": "XsD4rDQvaSWoq6p5aYMD9jXqe0tbfRs2H3WgOkGJ7gujh1HeXmEPQ13I5abnQC8W3bCkUzbmwtqamW1Eq6FrCQ=="
+    },
+    "VIP-0003": {
+      "asset": "AS6cSdZ3wVNyuGgAnjLuSDVA1FR2V6e5HEerb1U2LSDH",
+      "tx": "3SWMkvMa1q4qBCkW2g6ToJGQaRwaAvFtg1oRJBypE7TW3efWFG4JxVBxfWQfKquH8eNEpAifgBU6Cw31NDyj7QpM",
+      "when": "2026-01-04T12:15:44.602Z",
+      "collection": "DCnCRpzi4xyf5pSxrPGWv7QvhDE89QQePWhNrBDApL7D",
+      "collectionBackfilledAt": "2026-01-05T05:38:46.767Z",
+      "collectionTx": "fts3KqgPxioLJHnF5iE2uhnfd6SRZkgUookS6U9owWoA9CDmgtixQwPbBEDnj4sF4zwke56zEHdQFCvgH81nV1x",
+      "collectionBackfillSigBase64": "IYp2Z5GIyj0OUcpICnisLU0MbCzjsynGkk5tlz2+AQY2gx1o7PGHMohJxne1Lt885oEaPU8285ESf5ObEithDw=="
+    },
+    "VIP-0004": {
+      "vipId": "VIP-0004",
+      "to": "ANeJq1Hg1VA1xAn3XMiqesfwFkgfdHK521L6TmW2yjAh",
+      "bgId": 2,
+      "asset": "8kgHsHewQPe9qDAuTcCTzd3oNvR3evSXAXmJSFfpUJbs",
+      "tx": "KgRhT4q3ZTFTjG87RA9LRqNmyip257J6T1UQuXZJEGtAvVcj7e59oAHbax7PhJM8ptefu9zu7tPouoxKuVY7ph1",
+      "imageUri": "https://gateway.irys.xyz/P_JLO5VzW2JFwrsXy2co-XlwhFnC7OPx0k_PD46oHzU",
+      "metadataUri": "https://gateway.irys.xyz/OXheeWJ9xnicgwndtBhGfT-rag8XGSoj0GfoFwmiZmA",
+      "collection": "DCnCRpzi4xyf5pSxrPGWv7QvhDE89QQePWhNrBDApL7D",
+      "collectionTx": "GRKaRUFKdWWCs4ay9ZfEbdP9ENi9km5HNcq861zAHZXjgqRNotzkCnZ4dG7U9zYmGdbTaB7gz5h4pZJvMRwBTqB",
+      "when": "2026-01-05T03:38:11.501Z",
+      "collectionBackfilledAt": "2026-01-05T05:39:01.393Z",
+      "collectionBackfillSigBase64": "DUwKS8XRbfZDMmYEIqg84iI4TxHqmouo3VZS8fhiMmNHrV2ehW/GjEWcmR7ibp+XUslfxsZvIRQUwpCLsHw9Ag=="
+    }
+  }
+}

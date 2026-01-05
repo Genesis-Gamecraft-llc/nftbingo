@@ -48,12 +48,7 @@ export default function JoinCommunityPage() {
                 Follow on X
               </a>
 
-              <a
-                href="https://t.me/NFTBingoCommunityChat"
-                className="bg-[#229ED9] text-white px-6 py-3 rounded-xl shadow hover:opacity-90 transition font-semibold text-center"
-              >
-                Join Telegram
-              </a>
+            
 
               <a
                 href="https://discord.gg/tCWVcG5vnc"
