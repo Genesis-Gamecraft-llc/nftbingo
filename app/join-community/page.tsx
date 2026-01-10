@@ -51,7 +51,7 @@ export default function JoinCommunityPage() {
             
 
               <a
-                href="https://discord.gg/tCWVcG5vnc"
+                href="https://mee6.xyz/i/waioENg8Ot"
                 className="bg-[#5865F2] text-white px-6 py-3 rounded-xl shadow hover:opacity-90 transition font-semibold text-center"
               >
                 Join Discord
