@@ -1,111 +1,149 @@
 // lib/cardGenerator/generateImage.ts
+
 import fs from "fs";
 import path from "path";
 import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
+
+import { CARD_W, CARD_H, GRID_X, GRID_Y, CELL_W, CELL_H } from "./config";
+
+export type SeriesFolder = "series1" | "vip" | string;
+
+export type GenerateCardImageOptions = {
+  /**
+   * Which folder under /public/backgrounds/ to use.
+   * Examples: "series1" (Founders), "vip" (VIP)
+   */
+  seriesFolder?: SeriesFolder;
+
+  /**
+   * Optional explicit background path (relative to /public or absolute).
+   * Example (relative to /public): "backgrounds/vip/bg0.png"
+   */
+  backgroundPath?: string;
+
+  /**
+   * Optional number styling overrides (leave blank to use defaults).
+   */
+  numberFontSizePx?: number;
+  numberColor?: string;
+};
 
 let fontRegistered = false;
 
 function ensureFontRegistered() {
   if (fontRegistered) return;
 
-  const fontPath = path.join(process.cwd(), "public", "fonts", "NFTBingoNumbers.ttf");
-  try {
-    if (fs.existsSync(fontPath)) {
-      GlobalFonts.registerFromPath(fontPath, "NFTBingoNumbers");
-      // keep your existing console output behavior
-      console.log(`✅ Registered canvas font "NFTBingoNumbers" from ${fontPath}`);
-    } else {
-      console.log(`⚠️ Font not found at ${fontPath} (continuing with default font).`);
-    }
-  } catch (e: any) {
-    console.log("⚠️ Font register failed (continuing):", e?.message ?? e);
+  const fontPath = path.join(
+    process.cwd(),
+    "public",
+    "fonts",
+    "NFTBingoNumbers.ttf"
+  );
+
+  if (fs.existsSync(fontPath)) {
+    GlobalFonts.registerFromPath(fontPath, "NFTBingoNumbers");
+    console.log(`✅ Registered canvas font "NFTBingoNumbers" from ${fontPath}`);
+  } else {
+    console.log(
+      `⚠️ Font not found at ${fontPath} (continuing with default font)`
+    );
   }
 
   fontRegistered = true;
 }
 
+function safeJoinPublic(relPathFromPublic: string) {
+  const parts = relPathFromPublic.split(/[\\/]/g).filter(Boolean);
+  return path.join(process.cwd(), "public", ...parts);
+}
+
 /**
- * Generates a bingo card image with numbers over a background.
- *
- * Backwards compatible:
- * - Founders/Series calls: generateCardImage(numbers, bgId)
- *
- * New:
- * - VIP calls: generateCardImage(numbers, bgId, "vip")
+ * Generate a Bingo card PNG buffer.
+ * - numbers must be length 25
+ * - we SKIP the center index 12 draw (center artwork is part of the background)
  */
 export async function generateCardImage(
   numbers: number[],
-  bgId: number,
-  folder: "series1" | "vip" = "series1"
+  backgroundId: number,
+  options?: GenerateCardImageOptions
 ): Promise<Buffer> {
   ensureFontRegistered();
 
-  // Safety
   if (!Array.isArray(numbers) || numbers.length !== 25) {
-    throw new Error(`generateCardImage(): expected numbers length 25, got ${numbers?.length}`);
+    throw new Error(`Expected 25 numbers, got ${numbers?.length ?? 0}`);
   }
 
-  // Background path (VIP is its own folder)
-  const backgroundsDir = path.join(process.cwd(), "public", "backgrounds", folder);
-  const primaryBgPath = path.join(backgroundsDir, `bg${bgId}.png`);
-  const fallbackBgPath = path.join(backgroundsDir, `bg0.png`);
+  // Defaults (so we don't depend on config exports that may not exist)
+  const fontSize =
+    options?.numberFontSizePx ??
+    Math.max(22, Math.floor(Math.min(CELL_W, CELL_H) * 0.55));
+  const fontColor = options?.numberColor ?? "#111";
 
-  const bgPath = fs.existsSync(primaryBgPath) ? primaryBgPath : fallbackBgPath;
-
-  if (!fs.existsSync(bgPath)) {
-    throw new Error(
-      `Missing background. Tried:\n- ${primaryBgPath}\n- ${fallbackBgPath}\nFolder: ${folder}`
-    );
-  }
-
-  const img = await loadImage(bgPath);
-
-  // Use the background size as canvas size
-  const width = img.width;
-  const height = img.height;
-
-  const canvas = createCanvas(width, height);
+  const canvas = createCanvas(CARD_W, CARD_H);
   const ctx = canvas.getContext("2d");
 
-  // Draw background
-  ctx.drawImage(img, 0, 0, width, height);
+  // Background resolution
+  const seriesFolder = (options?.seriesFolder || "series1").trim();
 
-  // ---- Number rendering ----
-  // These values assume your template (grid area) matches what you already had working.
-  // If your layout shifts, tweak these 4 numbers only.
-  const gridLeft = Math.round(width * 0.06);
-  const gridTop = Math.round(height * 0.36);
-  const gridWidth = Math.round(width * 0.88);
-  const gridHeight = Math.round(height * 0.58);
+  const explicitBg = options?.backgroundPath
+    ? path.isAbsolute(options.backgroundPath)
+      ? options.backgroundPath
+      : safeJoinPublic(options.backgroundPath)
+    : null;
 
-  const cellW = gridWidth / 5;
-  const cellH = gridHeight / 5;
+  const backgroundsDir = path.join(
+    process.cwd(),
+    "public",
+    "backgrounds",
+    seriesFolder
+  );
 
-  // Font setup
-  const fontSize = Math.round(Math.min(cellW, cellH) * 0.42);
-  ctx.font = `${fontSize}px NFTBingoNumbers, Arial, sans-serif`;
-  ctx.fillStyle = "#111";
+  const requestedBg =
+    explicitBg ?? path.join(backgroundsDir, `bg${backgroundId}.png`);
+
+  const fallbackSeriesBg0 = path.join(backgroundsDir, "bg0.png");
+  const fallbackFoundersBg0 = path.join(
+    process.cwd(),
+    "public",
+    "backgrounds",
+    "series1",
+    "bg0.png"
+  );
+
+  let bgPathToUse: string | null = null;
+
+  if (requestedBg && fs.existsSync(requestedBg)) bgPathToUse = requestedBg;
+  else if (fs.existsSync(fallbackSeriesBg0)) bgPathToUse = fallbackSeriesBg0;
+  else if (fs.existsSync(fallbackFoundersBg0)) bgPathToUse = fallbackFoundersBg0;
+
+  if (bgPathToUse) {
+    const bg = await loadImage(bgPathToUse);
+    ctx.drawImage(bg, 0, 0, CARD_W, CARD_H);
+  } else {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, CARD_W, CARD_H);
+  }
+
+  // Draw numbers
+  ctx.fillStyle = fontColor;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+  ctx.font = `${fontSize}px "NFTBingoNumbers"`;
 
-  // Slight shadow for readability
-  ctx.shadowColor = "rgba(0,0,0,0.15)";
-  ctx.shadowBlur = Math.round(fontSize * 0.08);
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = Math.round(fontSize * 0.05);
+  for (let row = 0; row < 5; row++) {
+    for (let col = 0; col < 5; col++) {
+      const idx = row * 5 + col;
 
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 5; c++) {
-      const idx = r * 5 + c;
+      // DO NOT draw the center (background handles the free/logo spot)
+      if (idx === 12) continue;
+
       const value = numbers[idx];
+      if (value === undefined || value === null) continue;
 
-      // FREE is usually encoded as 0 in your system
-      const label = value === 0 ? "FREE" : String(value);
+      const x = GRID_X + col * CELL_W + CELL_W / 2;
+      const y = GRID_Y + row * CELL_H + CELL_H / 2;
 
-      const x = gridLeft + c * cellW + cellW / 2;
-      const y = gridTop + r * cellH + cellH / 2;
-
-      ctx.fillText(label, x, y);
+      ctx.fillText(String(value), x, y);
     }
   }
 
