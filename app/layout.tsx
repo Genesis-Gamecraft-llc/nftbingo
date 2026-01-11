@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
 import { Providers } from "./providers";
 import SolanaProviders from "./solana-providers";
+import { Analytics } from "@vercel/analytics/next"
 
 export const metadata: Metadata = {
   title: "NFTBingo – Own. Play. Win. Earn",
@@ -49,6 +50,7 @@ export default function RootLayout({
             <div className="pt-20">{children}</div>
           </SolanaProviders>
         </Providers>
+        <Analytics />
       </body>
     </html>
   );

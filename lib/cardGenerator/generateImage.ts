@@ -1,114 +1,146 @@
 // lib/cardGenerator/generateImage.ts
+/**
+ * Server-side bingo card image generator.
+ *
+ * Supports:
+ *  - Founders / Series1 backgrounds: /public/backgrounds/series1/bg{bgId}.png
+ *  - VIP backgrounds:               /public/backgrounds/vip/bg{bgId}.png
+ *
+ * IMPORTANT:
+ *  - We DO NOT render anything in the center square. The "FREE" + logo is part of the background art.
+ *  - Numbers must be a 25-length array in row-major order. Center index 12 is ignored.
+ */
 
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
+
 import { CARD_W, CARD_H, GRID_X, GRID_Y, CELL_W, CELL_H } from "./config";
-
-// ---- FONT SETUP ----
-// Font file path: public/fonts/NFTBingoNumbers.ttf
-const FONT_FAMILY = "NFTBingoNumbers";
-
-// Register font once (works on Vercel + local)
-(() => {
-  try {
-    const fontPath = path.join(process.cwd(), "public", "fonts", "NFTBingoNumbers.ttf");
-    if (!GlobalFonts.has(FONT_FAMILY)) {
-      const ok = GlobalFonts.registerFromPath(fontPath, FONT_FAMILY);
-      if (ok) {
-        console.log(`✅ Registered canvas font "${FONT_FAMILY}" from ${fontPath}`);
-      } else {
-        console.warn(`⚠️ Failed to register font at ${fontPath} for family ${FONT_FAMILY}`);
-      }
-    }
-  } catch (err) {
-    console.warn("⚠️ Error registering canvas font:", err);
-  }
-})();
 
 export type SeriesFolder = "series1" | "vip" | (string & {});
 export type GenerateCardImageOptions = {
   /**
    * Which folder under /public/backgrounds/ to use.
-   * - Founders: "series1"
-   * - VIP: "vip"
+   * Defaults to "series1" (Founders).
    */
   seriesFolder?: SeriesFolder;
 
   /**
-   * Optional override for number styling.
-   * Defaults match your prior working look.
+   * Override the font path (defaults to /public/fonts/NFTBingoNumbers.ttf)
+   */
+  fontPath?: string;
+
+  /**
+   * Font family name to use when drawing numbers.
+   * Defaults to "NFTBingoNumbers"
+   */
+  fontFamily?: string;
+
+  /**
+   * Font size in px (defaults to a value that matches 2048x3072 art).
    */
   fontSizePx?: number;
-  fontColor?: string;
-  fontWeight?: string; // e.g. "bold"
 };
 
+let fontReady = false;
+
+function ensureFontRegistered(opts?: GenerateCardImageOptions) {
+  if (fontReady) return;
+
+  const fontPath =
+    opts?.fontPath ??
+    path.join(process.cwd(), "public", "fonts", "NFTBingoNumbers.ttf");
+
+  const family = opts?.fontFamily ?? "NFTBingoNumbers";
+
+  try {
+    if (fs.existsSync(fontPath)) {
+      GlobalFonts.registerFromPath(fontPath, family);
+      console.log(`✅ Registered canvas font "${family}" from ${fontPath}`);
+    } else {
+      console.log(`⚠️ Font not found at ${fontPath} (using default system font)`);
+    }
+  } catch (e: any) {
+    console.log("⚠️ Font register failed (using default system font):", e?.message ?? e);
+  }
+
+  fontReady = true;
+}
+
+function resolveBackgroundPath(bgId: number, seriesFolder: string) {
+  return path.join(
+    process.cwd(),
+    "public",
+    "backgrounds",
+    seriesFolder,
+    `bg${bgId}.png`
+  );
+}
+
 /**
- * Generate a bingo card PNG buffer.
- *
- * - numbers: 25 values (row-major 5x5)
- * - backgroundId: which bgX.png
- * - options.seriesFolder: "series1" (default) or "vip"
- *
- * IMPORTANT:
- * - We DO NOT draw anything in the center cell (idx 12).
- *   Your background already contains the FREE/logo spot.
+ * Primary API.
+ * Backwards compatible with older callers that did: generateCardImage(numbers, bgId)
  */
 export async function generateCardImage(
   numbers: number[],
-  backgroundId: number,
+  bgId: number,
   options?: GenerateCardImageOptions
 ): Promise<Buffer> {
+  ensureFontRegistered(options);
+
   if (!Array.isArray(numbers) || numbers.length !== 25) {
-    throw new Error(`Expected 25 numbers, got ${Array.isArray(numbers) ? numbers.length : "non-array"}`);
+    throw new Error(
+      `Missing card numbers. Expected a 25-number array, got ${
+        Array.isArray(numbers) ? numbers.length : typeof numbers
+      }.`
+    );
   }
 
-  const seriesFolder: SeriesFolder = options?.seriesFolder ?? "series1";
-  const fontSizePx = options?.fontSizePx ?? 150;
-  const fontColor = options?.fontColor ?? "#000000";
-  const fontWeight = options?.fontWeight ?? "bold";
+  const seriesFolder = options?.seriesFolder ?? "series1";
+  const bgPath = resolveBackgroundPath(bgId, seriesFolder);
 
-  // 1) Create canvas & context
+  if (!fs.existsSync(bgPath)) {
+    throw new Error(`Background not found: ${bgPath}`);
+  }
+
+  const bg = await loadImage(bgPath);
+
   const canvas = createCanvas(CARD_W, CARD_H);
   const ctx = canvas.getContext("2d");
 
-  // 2) Draw background
-  const backgroundsDir = path.join(process.cwd(), "public", "backgrounds", String(seriesFolder));
-  const requestedBg = path.join(backgroundsDir, `bg${backgroundId}.png`);
-  const fallbackBg = path.join(backgroundsDir, "bg0.png");
+  // Draw background full size
+  ctx.drawImage(bg, 0, 0, CARD_W, CARD_H);
 
-  let bgImage;
-  try {
-    bgImage = await loadImage(requestedBg);
-  } catch {
-    // Fallback for missing bg files
-    bgImage = await loadImage(fallbackBg);
-  }
+  const family = options?.fontFamily ?? "NFTBingoNumbers";
+  const fontSize = options?.fontSizePx ?? 128;
 
-  ctx.drawImage(bgImage, 0, 0, CARD_W, CARD_H);
-
-  // 3) Text styling
+  // Text styling
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = fontColor;
-  ctx.font = `${fontWeight} ${fontSizePx}px ${FONT_FAMILY}`;
+  ctx.fillStyle = "#000"; // black numbers
+  ctx.font = `${fontSize}px "${family}"`;
 
-  // 4) Draw 5x5 numbers using your config-based grid math
-  // Skip the center (idx 12). Do NOT print FREE text.
   for (let row = 0; row < 5; row++) {
     for (let col = 0; col < 5; col++) {
       const idx = row * 5 + col;
-      if (idx === 12) continue; // center cell
 
-      const value = numbers[idx];
-      if (!Number.isFinite(value) || value <= 0) continue;
+      // Center (FREE) square: DO NOT render anything
+      if (idx === 12) continue;
+
+      const n = numbers[idx];
+      if (n === null || n === undefined || Number.isNaN(Number(n))) continue;
 
       const x = GRID_X + col * CELL_W + CELL_W / 2;
       const y = GRID_Y + row * CELL_H + CELL_H / 2;
 
-      ctx.fillText(String(value), x, y);
+      ctx.fillText(String(n), x, y);
     }
   }
 
   return canvas.toBuffer("image/png");
 }
+
+/**
+ * Compatibility alias (older code imported { generateImage }).
+ */
+export const generateImage = generateCardImage;

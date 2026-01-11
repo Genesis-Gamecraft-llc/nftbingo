@@ -34,7 +34,7 @@ export default async function BlogPostPage({
           <div className="absolute bottom-0 right-16 h-16 w-16 bg-white/20 rounded-full blur-xl animate-ping" />
         </div>
 
-        <div className="relative z-10 max-w-3xl mx-auto">
+        <div className="relative z-10 max-w-5xl mx-auto">
           {date ? <div className="text-sm opacity-90 mb-2">{date}</div> : null}
 
           <h1 className="text-4xl md:text-5xl font-extrabold mb-4">{title}</h1>
@@ -61,7 +61,7 @@ export default async function BlogPostPage({
       </section>
 
       {/* Article content */}
-      <section className="max-w-3xl mx-auto px-6 py-16">
+      <section className="max-w-5xl mx-auto px-6 py-16">
         <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
           {coverImage ? (
             <div className="mb-8 overflow-hidden rounded-xl border border-slate-200">
