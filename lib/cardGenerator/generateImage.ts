@@ -112,7 +112,7 @@ export async function generateCardImage(
   ctx.drawImage(bg, 0, 0, CARD_W, CARD_H);
 
   const family = options?.fontFamily ?? "NFTBingoNumbers";
-  const fontSize = options?.fontSizePx ?? 128;
+  const fontSize = options?.fontSizePx ?? 156;
 
   // Text styling
   ctx.textAlign = "center";
