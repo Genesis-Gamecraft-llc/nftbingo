@@ -52,6 +52,18 @@
       "collection": "DCnCRpzi4xyf5pSxrPGWv7QvhDE89QQePWhNrBDApL7D",
       "collectionTx": "Zro1bfEyp6FvJ9T9ieLaswunEyGsn7H4YrwaP5gWA4JPyxrsfKF3heSit45Ra9W7epLZNwAgAoAwDsyUb2sNi6Q",
       "when": "2026-01-11T06:58:29.168Z"
+    },
+    "VIP-0006": {
+      "vipId": "VIP-0006",
+      "to": "ANeJq1Hg1VA1xAn3XMiqesfwFkgfdHK521L6TmW2yjAh",
+      "bgId": 1,
+      "asset": "7CMHQ89mkkFgXmp4rckkwBZy4ccJJxiYnVSGtsJtfWV1",
+      "tx": "26hT2qEw4eLzLjzA3G4pafa5GLujsn2V6WgjWdFGg2MEeDWsTVTGePVsPL3nwdyjWBiNeUWVrBHK9GjXGTkhKHjE",
+      "imageUri": "https://gateway.irys.xyz/w82XW1K24chQqGW-uS-rzYlHuxEEusiNZUpCZqoC5Gc",
+      "metadataUri": "https://gateway.irys.xyz/IIOKg_QjVGILqXW98GTWRvufdO91XaRg7JmJqtKsmoA",
+      "collection": "DCnCRpzi4xyf5pSxrPGWv7QvhDE89QQePWhNrBDApL7D",
+      "collectionTx": "5Vbh5ryPk9t9HKfz9FXfmSbKdWrdEqWRC45uuXVMbbB2fvoXAhsQf6eomH5TEjm6eRwUCagUvxZRAJzE4QSzvP26",
+      "when": "2026-01-11T07:46:34.265Z"
     }
   }
 }
