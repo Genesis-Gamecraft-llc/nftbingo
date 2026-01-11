@@ -4,7 +4,7 @@ const nextConfig = {
     return [
       {
         source: "/discord",
-        destination: "https://mee6.xyz/i/waioENg8Ot",
+        destination: "https://discord.gg/kWexunPTV3",
         permanent: false, // 302 redirect (correct for invite links)
       },
     ];
