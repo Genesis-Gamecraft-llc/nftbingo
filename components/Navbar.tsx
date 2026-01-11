@@ -15,6 +15,7 @@ export default function Navbar() {
     { name: "About", href: "/about" },
     { name: "Whitepaper", href: "/whitepaper" },
     { name: "Roadmap", href: "/roadmap" },
+    { name: "Blog", href: "/blog" },
     { name: "Join Community", href: "/join-community" },
   ];
 
