@@ -25,7 +25,7 @@ export default function Home() {
 
         <div className="relative mt-10 flex flex-wrap justify-center gap-4 z-10">
           <a
-            href="/join"
+            href="/join-community"
             className="rounded-xl bg-white text-pink-600 font-semibold px-8 py-4 shadow hover:bg-slate-100"
           >
             Join Us
