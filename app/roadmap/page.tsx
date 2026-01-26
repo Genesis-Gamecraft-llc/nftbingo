@@ -111,8 +111,8 @@ export default function RoadmapPage() {
           { id: "p1-metadata-resolution", label: "NFT Metadata Hosting + On-Chain URI Resolution Verified", status: "done" },
           { id: "p1-founders-art", label: "Founders Series Card Art Completed", status: "in-progress" },
           { id: "p1-community-growth", label: "Community growth focus to support live mint potential", status: "in-progress" },
-          { id: "p1-mint-program-deployed", label: "NFTBingo Mint Program Deployed (Solana Mainnet)", status: "planned" },
-          { id: "p1-mint-program-live", label: "Founders Series Mint Live! (Solana Mainnet)", status: "planned" },
+          { id: "p1-mint-program-deployed", label: "NFTBingo Mint Program Deployed (Solana Mainnet)", status: "in-progress" },
+          { id: "p1-mint-program-live", label: "Platinum Tier Founders Series mint live February 01, 2026 (Solana Mainnet)", status: "planned" },
         ],
       },
       {
