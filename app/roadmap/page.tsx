@@ -438,7 +438,7 @@ export default function RoadmapPage() {
 
         {/* Footer note */}
         <div className="mt-12 text-center text-sm text-slate-500">
-          © 2025 NFTBingo • Built on Solana • nftbingo.net • Roadmap version 1.0
+          © 2025 NFTBingo • Built on Solana • nftbingo.net • Roadmap version 1.1
         </div>
       </div>
     </main>
