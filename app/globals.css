@@ -55,3 +55,44 @@ body {
 .wallet-adapter-modal-wrapper {
   font-family: inherit;
 }
+
+/* ----------------------------- */
+/* FIX: Wallet modal transparency */
+/* (does NOT change your CTA button styling above) */
+/* ----------------------------- */
+
+.wallet-adapter-modal-overlay {
+  background: rgba(0, 0, 0, 0.65) !important;
+}
+
+.wallet-adapter-modal-wrapper {
+  background: #0b0b0f !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55) !important;
+}
+
+.wallet-adapter-modal-title {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.wallet-adapter-modal-list {
+  margin: 0 !important;
+  padding: 0.5rem !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 12px !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button:hover {
+  background: rgba(255, 255, 255, 0.10) !important;
+}
+
+.wallet-adapter-modal-button-close {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-radius: 9999px !important;
+}

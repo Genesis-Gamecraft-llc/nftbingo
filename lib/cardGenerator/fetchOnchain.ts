@@ -1,5 +1,13 @@
-import { Connection, PublicKey } from "@solana/web3.js";
-import { Metadata } from "@metaplex-foundation/mpl-token-metadata";
+// lib/cardGenerator/fetchOnchain.ts
+import "server-only";
+
+import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
+import { publicKey } from "@metaplex-foundation/umi";
+import {
+  mplTokenMetadata,
+  findMetadataPda,
+  safeFetchMetadata,
+} from "@metaplex-foundation/mpl-token-metadata";
 
 export type CardOnchainData = {
   numbers: number[]; // expected 25
@@ -8,42 +16,44 @@ export type CardOnchainData = {
   uri?: string;
 };
 
-// Metaplex Token Metadata program id (stable)
-const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
-  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
-);
+function getRpcUrl(opts?: { rpcUrl?: string }) {
+  return (
+    opts?.rpcUrl ||
+    process.env.SOLANA_RPC_URL ||
+    process.env.NEXT_PUBLIC_SOLANA_RPC ||
+    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+    "https://api.mainnet-beta.solana.com"
+  );
+}
+
+/**
+ * Fetch the Token Metadata "uri" for a mint address using Umi (safe + version-proof).
+ */
+async function fetchMetadataUriForMint(mintAddress: string, opts?: { rpcUrl?: string }) {
+  const rpcUrl = getRpcUrl(opts);
+  const umi = createUmi(rpcUrl).use(mplTokenMetadata());
+
+  const mintPk = publicKey(mintAddress);
+  const metadataPda = findMetadataPda(umi, { mint: mintPk });
+
+  const md = await safeFetchMetadata(umi, metadataPda);
+  if (!md) throw new Error(`No metadata account found for mint: ${mintAddress}`);
+
+  // In Umi token-metadata, `uri` is a top-level string on the metadata model.
+  const uri = String((md as any).uri ?? "")
+    .replace(/\0/g, "")
+    .trim();
+
+  if (!uri) throw new Error(`Metadata URI is empty for mint: ${mintAddress}`);
+
+  return uri;
+}
 
 export async function getCardDataFromMint(
   mintAddress: string,
   opts?: { rpcUrl?: string }
 ): Promise<CardOnchainData> {
-  const rpcUrl =
-    opts?.rpcUrl ||
-    process.env.NEXT_PUBLIC_SOLANA_RPC ||
-    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-    "https://api.devnet.solana.com";
-
-  const connection = new Connection(rpcUrl, "confirmed");
-  const mint = new PublicKey(mintAddress);
-
-  // Derive Metadata PDA: ["metadata", token_metadata_program_id, mint]
-  const [metadataPda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-    TOKEN_METADATA_PROGRAM_ID
-  );
-
-  const acct = await connection.getAccountInfo(metadataPda);
-  if (!acct?.data) {
-    throw new Error(`No metadata account found for mint: ${mintAddress}`);
-  }
-
-  // v2 SDK: deserialize directly from account data
-  const [metadata] = Metadata.deserialize(acct.data);
-  const uri = (metadata.data.uri || "").replace(/\0/g, "").trim();
-
-  if (!uri) {
-    throw new Error(`Metadata URI is empty for mint: ${mintAddress}`);
-  }
+  const uri = await fetchMetadataUriForMint(mintAddress, opts);
 
   const res = await fetch(uri, { cache: "no-store" });
   if (!res.ok) {
@@ -87,6 +97,10 @@ function extractCardDataFromJson(json: any): { numbers: number[]; backgroundId: 
 
   if (!numbers) numbers = parseNumbers(json?.properties?.numbers);
   if (backgroundId === undefined) backgroundId = parseNumber(json?.properties?.backgroundId);
+
+  // ✅ Support your current mint metadata shape: json.nftbingo.numbers + backgroundId
+  if (!numbers) numbers = parseNumbers(json?.nftbingo?.numbers);
+  if (backgroundId === undefined) backgroundId = parseNumber(json?.nftbingo?.backgroundId);
 
   if (!numbers || numbers.length !== 25) {
     throw new Error(

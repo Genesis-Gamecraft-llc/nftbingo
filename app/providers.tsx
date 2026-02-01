@@ -1,6 +1,8 @@
 "use client";
 
-export function Providers({ children }: { children: React.ReactNode }) {
-  // EVM providers removed during Solana migration.
-  return <>{children}</>;
+import React from "react";
+import SolanaProviders from "./solana-providers";
+
+export default function Providers({ children }: { children: React.ReactNode }) {
+  return <SolanaProviders>{children}</SolanaProviders>;
 }

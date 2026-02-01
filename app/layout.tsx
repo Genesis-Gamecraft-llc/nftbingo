@@ -1,7 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
-import { Providers } from "./providers";
+import Providers from "./providers";
 import SolanaProviders from "./solana-providers";
 import { Analytics } from "@vercel/analytics/next"
 
