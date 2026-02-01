@@ -97,7 +97,7 @@ export default function Navbar() {
             ))}
 
             <Link
-              href="/mint"
+              href="/mint-nftbingo-cards"
               onClick={() => setMenuOpen(false)}
               className="w-11/12 text-center bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white font-semibold px-4 py-2 rounded-xl shadow"
             >
