@@ -23,7 +23,6 @@ function sleep(ms: number) {
 function getConnection() {
   const rpc = process.env.SOLANA_RPC_URL?.trim();
   if (!rpc) throw new Error("Missing SOLANA_RPC_URL env var");
-  // IMPORTANT: we do NOT use websocket subscriptions anywhere in this route
   return new Connection(rpc, CONFIRM_COMMITMENT);
 }
 
@@ -67,7 +66,6 @@ async function sendWithRetries(
 
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      // sendRawTransaction is HTTP, not pubsub
       return await connection.sendRawTransaction(rawTx, opts);
     } catch (e: any) {
       lastErr = e;
@@ -129,7 +127,7 @@ export async function POST(req: Request) {
     const attempt = await kv.get<any>(attemptKey);
     if (!attempt) return NextResponse.json({ ok: false, error: "Attempt not found" }, { status: 404 });
 
-    // If already submitted, return existing signature + reveal payload
+    // If already submitted, return existing signature + reveal fields
     if (attempt.signature) {
       return NextResponse.json({
         ok: true,
@@ -138,13 +136,12 @@ export async function POST(req: Request) {
         status: attempt.status ?? "submitted",
         explorer: `https://explorer.solana.com/tx/${attempt.signature}?cluster=mainnet-beta`,
 
-        // Reveal payload (attempt already completed)
+        // ✅ reveal fields
         name: attempt.name,
         serial: attempt.serial,
         backgroundId: attempt.backgroundId,
-        imageUri: attempt.imageUri,
         metadataUri: attempt.metadataUri,
-        mint: attempt.mint ?? null,
+        imageUri: attempt.imageUri,
       });
     }
 
@@ -160,32 +157,39 @@ export async function POST(req: Request) {
     }
 
     const connection = getConnection();
-
     const rawTx = decodeTxBytes(signedTxBase64);
 
-    // Send tx
     const sendOpts: SendOptions = {
       skipPreflight: false,
-      maxRetries: 0, // we handle retries ourselves
+      maxRetries: 0,
     };
 
     const signature = await sendWithRetries(connection, rawTx, sendOpts, 5);
 
-    // Confirm by polling
     const result = await confirmWithPolling(connection, signature, 60_000);
     const status = result === "confirmed" ? "confirmed" : "submitted";
 
-    // Mark slot minted
     if (attempt.slotId) {
       await markSlotMinted(Number(attempt.slotId));
     }
 
-    attempt.signature = signature;
     attempt.status = status;
+    attempt.signature = signature;
     await kv.set(attemptKey, attempt, { ex: 60 * 60 });
 
     await kv.del(lockKey);
 
+    console.log("[MINT SUCCESS]", {
+      attemptId,
+      signature,
+      status,
+      wallet: attempt?.wallet,
+      serial: attempt?.serial,
+      slotId: attempt?.slotId,
+      backgroundId: attempt?.backgroundId,
+    });
+
+    // ✅ return reveal fields so UI can display the card + info
     return NextResponse.json({
       ok: true,
       attemptId,
@@ -193,13 +197,11 @@ export async function POST(req: Request) {
       status,
       explorer: `https://explorer.solana.com/tx/${signature}?cluster=mainnet-beta`,
 
-      // Reveal payload (only returned after approval + confirmed signature)
       name: attempt.name,
       serial: attempt.serial,
       backgroundId: attempt.backgroundId,
-      imageUri: attempt.imageUri,
       metadataUri: attempt.metadataUri,
-      mint: attempt.mint ?? null,
+      imageUri: attempt.imageUri,
     });
   } catch (e: any) {
     if (lockKey) {
