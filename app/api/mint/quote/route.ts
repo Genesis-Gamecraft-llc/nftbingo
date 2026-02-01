@@ -6,7 +6,7 @@ import { kv } from "@vercel/kv";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const USD_TARGET = 0.10;
+const USD_TARGET = .10;
 
 // Pyth SOL/USD feed id
 const PYTH_SOL_USD_FEED_ID =

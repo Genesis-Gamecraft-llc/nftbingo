@@ -8,11 +8,18 @@ const nextConfig = {
         permanent: false, // 302 redirect (correct for invite links)
       },
       {
-        source: '/giveaway',
-        destination: 'https://zealy.io/cw/nftbingo/questboard/f9623b3f-00b5-4c91-bdac-8bae13db7add',
+        source: "/giveaway",
+        destination: "https://zealy.io/cw/nftbingo/questboard/f9623b3f-00b5-4c91-bdac-8bae13db7add",
         permanent: false,
       },
     ];
+  },
+
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "gateway.irys.xyz" },
+      { protocol: "https", hostname: "node1.irys.xyz" },
+    ],
   },
 
   webpack: (config, { isServer }) => {

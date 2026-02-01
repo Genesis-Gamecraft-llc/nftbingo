@@ -141,7 +141,9 @@ export async function POST(req: Request) {
     const quoteId = String(body?.quoteId || "").trim();
     walletForLock = wallet;
 
-    console.log(`[BUILD] ${now()} input wallet=${wallet || "(missing)"} quoteId=${quoteId || "(missing)"}`);
+    console.log(
+      `[BUILD] ${now()} input wallet=${wallet || "(missing)"} quoteId=${quoteId || "(missing)"}`
+    );
 
     if (!wallet) {
       return NextResponse.json({ ok: false, error: "Missing wallet" }, { status: 400 });
@@ -162,7 +164,8 @@ export async function POST(req: Request) {
 
     const quote = await kv.get<QuoteRecord>(quoteKey(quoteId));
     if (!quote) return NextResponse.json({ ok: false, error: "Quote not found" }, { status: 404 });
-    if (Date.now() > quote.expiresAt) return NextResponse.json({ ok: false, error: "QUOTE_EXPIRED" }, { status: 400 });
+    if (Date.now() > quote.expiresAt)
+      return NextResponse.json({ ok: false, error: "QUOTE_EXPIRED" }, { status: 400 });
 
     const umi = getUmiServer();
 
@@ -196,7 +199,6 @@ export async function POST(req: Request) {
     // Upload image to IRYS
     const imageFile = createGenericFile(pngBytes, `nftbingo-${serial}.png`, { contentType: "image/png" });
     const [imageUri] = await umi.uploader.upload([imageFile]);
-
 
     // Metadata JSON
     const metadataJson = {
@@ -235,6 +237,7 @@ export async function POST(req: Request) {
     });
 
     const createIx = createNft(umi, {
+      payer: userNoopSigner, // ✅ user pays rent for mint/ata/metadata/master edition
       mint: mintSigner,
       authority: umi.identity,
       name,
@@ -258,7 +261,9 @@ export async function POST(req: Request) {
     });
 
     const builder = payIx.add(createIx).add(verifyIx);
+    builder.setFeePayer(userNoopSigner); // ✅ user pays tx fee (server still signs verify)
     const signedByServer = await builder.buildAndSign(umi);
+
     const txBytes = umi.transactions.serialize(signedByServer);
     const txBase64 = Buffer.from(txBytes).toString("base64");
 
@@ -304,7 +309,9 @@ export async function POST(req: Request) {
         await releaseSlot(reservedSlotId);
         console.log(`[BUILD] ${now()} released slotId=${reservedSlotId}`);
       } catch (e: any) {
-        console.log(`[BUILD] ${now()} failed to release slotId=${reservedSlotId}: ${String(e?.message ?? e)}`);
+        console.log(
+          `[BUILD] ${now()} failed to release slotId=${reservedSlotId}: ${String(e?.message ?? e)}`
+        );
       }
     }
 
@@ -315,7 +322,9 @@ export async function POST(req: Request) {
         await kv.del(buildLockKey(walletForLock));
         console.log(`[BUILD] ${now()} build lock released wallet=${walletForLock}`);
       } catch (e: any) {
-        console.log(`[BUILD] ${now()} failed to release build lock wallet=${walletForLock}: ${String(e?.message ?? e)}`);
+        console.log(
+          `[BUILD] ${now()} failed to release build lock wallet=${walletForLock}: ${String(e?.message ?? e)}`
+        );
       }
     }
   }
