@@ -52,7 +52,7 @@ export default function Navbar() {
 
           {/* Mint */}
           <Link
-            href="/mint-nftbingo-cards"
+            href="/mint"
             className="bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:scale-105 transition"
           >
             Mint Cards
