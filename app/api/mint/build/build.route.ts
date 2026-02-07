@@ -193,11 +193,14 @@ export async function POST(req: Request) {
     // Remove freeSpace from numbersByLetter
     const { freeSpace, ...numbersByLetter } = bingoByLetter(numbers);
 
-    // Generate image
+    // Generate image (PNG bytes)
+    // ✅ generateCardImage(numbers, bgId [, options]) — DO NOT pass { tier: ... } here.
     const pngBytes = await generateCardImage(numbers, slot.backgroundId);
 
     // Upload image to IRYS
-    const imageFile = createGenericFile(pngBytes, `nftbingo-${serial}.png`, { contentType: "image/png" });
+    const imageFile = createGenericFile(pngBytes, `nftbingo-${serial}.png`, {
+      contentType: "image/png",
+    });
     const [imageUri] = await umi.uploader.upload([imageFile]);
 
     // Metadata JSON
@@ -243,7 +246,7 @@ export async function POST(req: Request) {
       name,
       symbol,
       uri: metadataUri,
-      sellerFeeBasisPoints: percentAmount(5, 2),
+      sellerFeeBasisPoints: percentAmount(5, 2), // 5.00%
       tokenOwner: ownerPk,
       collection: { key: collectionMintPk, verified: false },
     });
@@ -252,6 +255,7 @@ export async function POST(req: Request) {
     const collectionMetadataPda = findMetadataPda(umi, { mint: collectionMintPk });
     const collectionMasterEditionPda = findMasterEditionPda(umi, { mint: collectionMintPk });
 
+    // ✅ verifyCollectionV1 does NOT accept `payer` here (that’s the redline you were seeing)
     const verifyIx = verifyCollectionV1(umi, {
       metadata: metadataPda,
       collectionMint: collectionMintPk,
@@ -270,7 +274,7 @@ export async function POST(req: Request) {
     const attemptId = crypto.randomUUID();
     console.log(`[BUILD] ${now()} attemptId=${attemptId}`);
 
-    // Store attempt: includes reveal payload, but NOT returned to client yet.
+    // Store attempt (reveal data saved server-side)
     await kv.set(
       `attempt:${attemptId}`,
       {
@@ -291,7 +295,7 @@ export async function POST(req: Request) {
 
     console.log(`[BUILD] ${now()} success end`);
 
-    // ✅ IMPORTANT: DO NOT reveal anything here.
+    // ✅ Do NOT reveal anything here.
     return NextResponse.json({
       ok: true,
       attemptId,
@@ -323,7 +327,9 @@ export async function POST(req: Request) {
         console.log(`[BUILD] ${now()} build lock released wallet=${walletForLock}`);
       } catch (e: any) {
         console.log(
-          `[BUILD] ${now()} failed to release build lock wallet=${walletForLock}: ${String(e?.message ?? e)}`
+          `[BUILD] ${now()} failed to release build lock wallet=${walletForLock}: ${String(
+            e?.message ?? e
+          )}`
         );
       }
     }
