@@ -463,6 +463,7 @@ export default function MintPage() {
                       <li>Player Series cards are free to mint (you only pay network + storage fees, usually ~$2 depending on Solana network conditions).</li>
                       <li>These cards can be used in any game that supports Player Series cards on NFTBingo.net</li>
                       <li>These cards are not be eligible for Founders Series rewards or special benefits. They will not be eligible for delegating or renting in our marketplace.</li>
+                      <li>Your wallet will likely ask you to verify 4 times. There are 2 for Irys upload and fee and 2 for wallet transfer and fee. This is where the ~$2 comes from. </li>
                     </ul>
                   </div>
 

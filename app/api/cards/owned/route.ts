@@ -21,27 +21,22 @@ function envAny(...keys: string[]) {
 }
 
 const RPC_URL =
-  envAny("SOLANA_RPC_URL", "NEXT_PUBLIC_SOLANA_RPC_URL") ||
+  envAny("SOLANA_RPC_URL", "NEXT_PUBLIC_SOLANA_RPC_URL", "NEXT_PUBLIC_SOLANA_RPC") ||
   "https://api.mainnet-beta.solana.com";
 
-// Allowed collections (your env names)
 const FOUNDERS_COLLECTION_MINT = envAny(
   "FOUNDERS_COLLECTION_MINT",
   "NEXT_PUBLIC_FOUNDERS_COLLECTION_MINT"
 );
+
 const PLAYER_COLLECTION_MINT = envAny(
   "PLAYER_SERIES_COLLECTION_MINT",
   "NEXT_PUBLIC_PLAYER_SERIES_COLLECTION_MINT"
 );
-const VIP_COLLECTION_MINT = envAny(
-  "VIP_COLLECTION_MINT",
-  "VIP_SERIES_COLLECTION_MINT",
-  "NEXT_PUBLIC_VIP_COLLECTION_MINT",
-  "NEXT_PUBLIC_VIP_SERIES_COLLECTION_MINT"
-);
 
+// Only these two for MVP.
 const ALLOWED_COLLECTIONS = new Set(
-  [FOUNDERS_COLLECTION_MINT, PLAYER_COLLECTION_MINT, VIP_COLLECTION_MINT].filter(Boolean)
+  [FOUNDERS_COLLECTION_MINT, PLAYER_COLLECTION_MINT].filter(Boolean)
 );
 
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -64,7 +59,7 @@ async function withRetries<T>(fn: () => Promise<T>, tries = 6) {
   throw lastErr;
 }
 
-function unwrapCollectionKeyFromMd(md: any): string {
+function unwrapCollectionKey(md: any): string {
   // md.collection is Option<Collection>
   if (md?.collection?.__option === "Some") return String(md.collection.value.key);
   return "";
@@ -73,7 +68,6 @@ function unwrapCollectionKeyFromMd(md: any): string {
 function seriesFromCollectionKey(collectionKey: string) {
   if (FOUNDERS_COLLECTION_MINT && collectionKey === FOUNDERS_COLLECTION_MINT) return "FOUNDERS";
   if (PLAYER_COLLECTION_MINT && collectionKey === PLAYER_COLLECTION_MINT) return "PLAYER";
-  if (VIP_COLLECTION_MINT && collectionKey === VIP_COLLECTION_MINT) return "VIP";
   return "UNKNOWN";
 }
 
@@ -93,68 +87,6 @@ function getAttr(json: any, trait: string) {
   const t = trait.toLowerCase();
   const a = attrs.find((x: any) => String(x?.trait_type || "").toLowerCase() === t);
   return a?.value;
-}
-
-function looksLikeVip(json: any) {
-  // VIP cards in your screenshot have:
-  // Series = VIP, Edition = VIP Series, VIP ID = VIP-0001
-  const series = String(getAttr(json, "Series") || "").toUpperCase();
-  const edition = String(getAttr(json, "Edition") || "").toUpperCase();
-  const vipId = String(getAttr(json, "VIP ID") || getAttr(json, "VIP_ID") || "").toUpperCase();
-
-  return (
-    series === "VIP" ||
-    edition.includes("VIP") ||
-    vipId.startsWith("VIP-") ||
-    vipId.startsWith("VIP_")
-  );
-}
-
-function extractNumbersByLetter(json: any): any | undefined {
-  // Founders/Players standard
-  if (json?.nftbingo?.numbersByLetter) return json.nftbingo.numbersByLetter;
-  if (json?.numbersByLetter) return json.numbersByLetter;
-
-  // VIP style: B/I/N/G/O as comma-separated strings (N includes FREE)
-  const b = getAttr(json, "B");
-  const i = getAttr(json, "I");
-  const n = getAttr(json, "N");
-  const g = getAttr(json, "G");
-  const o = getAttr(json, "O");
-
-  const parse = (v: any) => {
-    if (v == null) return null;
-    return String(v)
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map((x) => (x.toUpperCase() === "FREE" ? "FREE" : Number(x)));
-  };
-
-  const B = parse(b);
-  const I = parse(i);
-  const N = parse(n);
-  const G = parse(g);
-  const O = parse(o);
-  if (!B || !I || !N || !G || !O) return undefined;
-
-  const Bn = B.map((x) => Number(x)).filter(Number.isFinite);
-  const In = I.map((x) => Number(x)).filter(Number.isFinite);
-  const Nn = N.filter((x) => x !== "FREE").map((x) => Number(x)).filter(Number.isFinite);
-  const Gn = G.map((x) => Number(x)).filter(Number.isFinite);
-  const On = O.map((x) => Number(x)).filter(Number.isFinite);
-
-  if (Bn.length < 5 || In.length < 5 || Nn.length < 4 || Gn.length < 5 || On.length < 5) {
-    return undefined;
-  }
-
-  return {
-    B: Bn.slice(0, 5),
-    I: In.slice(0, 5),
-    N: Nn.slice(0, 4), // center is FREE
-    G: Gn.slice(0, 5),
-    O: On.slice(0, 5),
-  };
 }
 
 export async function GET(req: NextRequest) {
@@ -198,8 +130,8 @@ export async function GET(req: NextRequest) {
     const mints = Array.from(mintSet);
     if (!mints.length) return NextResponse.json({ ok: true, cards: [] });
 
-    // IMPORTANT: cap work so public RPC doesn't melt the server
-    const MAX_MINTS = 250;
+    // Cap work so public RPC doesn't melt you
+    const MAX_MINTS = 300;
     const scanMints = mints.slice(0, MAX_MINTS);
 
     const cards: any[] = [];
@@ -207,6 +139,7 @@ export async function GET(req: NextRequest) {
     for (const mintStr of scanMints) {
       try {
         const mintPk = umiPublicKey(mintStr);
+
         const mdPda = findMetadataPda(umi, { mint: mintPk });
         const md = await withRetries(() => safeFetchMetadata(umi, mdPda), 4);
         if (!md) continue;
@@ -215,30 +148,12 @@ export async function GET(req: NextRequest) {
         const symbol = String(md.symbol || "").replace(/\0/g, "").trim();
         const uri = String(md.uri || "").replace(/\0/g, "").trim();
 
-        // First: allow by verified collection if present
-        const collectionKey = unwrapCollectionKeyFromMd(md);
-        const collectionAllowed = !!collectionKey && ALLOWED_COLLECTIONS.has(collectionKey);
+        const collectionKey = unwrapCollectionKey(md);
+        if (!collectionKey || !ALLOWED_COLLECTIONS.has(collectionKey)) continue;
 
-        // If not allowed by collection, try VIP JSON heuristic (Series=VIP etc)
         const json = await fetchJson(uri);
-        const vipLike = json ? looksLikeVip(json) : false;
-
-        // Accept if:
-        // - collection matches one of your three allowed collections
-        // - OR it looks like VIP by JSON attributes (then we assign VIP collectionKey for labeling)
-        if (!collectionAllowed && !vipLike) continue;
-
-        const finalCollectionKey =
-          collectionAllowed
-            ? collectionKey
-            : (VIP_COLLECTION_MINT || collectionKey || "");
-
-        const series =
-          seriesFromCollectionKey(finalCollectionKey) !== "UNKNOWN"
-            ? seriesFromCollectionKey(finalCollectionKey)
-            : (vipLike ? "VIP" : "UNKNOWN");
-
-        const numbersByLetter = json ? extractNumbersByLetter(json) : undefined;
+        const numbersByLetter =
+          json?.nftbingo?.numbersByLetter || json?.numbersByLetter || undefined;
 
         cards.push({
           mint: mintStr,
@@ -246,14 +161,13 @@ export async function GET(req: NextRequest) {
           symbol: symbol || json?.symbol || "",
           uri,
           image: json?.image,
-          collectionKey: finalCollectionKey,
-          series,
+          collectionKey,
+          series: seriesFromCollectionKey(collectionKey),
           tier: String(getAttr(json, "Tier") || ""),
           numbersByLetter,
         });
       } catch {
-        // NEVER fail the whole endpoint because of one mint
-        continue;
+        continue; // never fail whole endpoint
       }
     }
 
