@@ -9,7 +9,13 @@ export const dynamic = "force-dynamic";
 
 type SubmitRequest = {
   attemptId: string;
-  signedTxBase64s: string[];
+
+  // NEW preferred path (1 wallet prompt total):
+  signature?: string;
+
+  // Back-compat (older client):
+  signatures?: string[];
+  signedTxBase64s?: string[];
 };
 
 type AttemptRecord = {
@@ -44,10 +50,8 @@ export async function POST(req: Request) {
     const body = (await req.json()) as SubmitRequest;
 
     const attemptId = String(body.attemptId || "").trim();
-    const signedTxBase64s = Array.isArray(body.signedTxBase64s) ? body.signedTxBase64s : [];
-
-    if (!attemptId || signedTxBase64s.length < 1) {
-      return NextResponse.json({ ok: false, error: "Missing attemptId or signedTxBase64s" }, { status: 400 });
+    if (!attemptId) {
+      return NextResponse.json({ ok: false, error: "Missing attemptId" }, { status: 400 });
     }
 
     const attempt = (await kv.get<AttemptRecord>(attemptKey(attemptId))) ?? null;
@@ -55,7 +59,43 @@ export async function POST(req: Request) {
 
     const conn = getConnection();
 
+    // Preferred: confirm a signature that the client already sent
+    const sigs: string[] = [];
+    if (body.signature) sigs.push(String(body.signature));
+    if (Array.isArray(body.signatures)) sigs.push(...body.signatures.map(String));
+
     const results: Array<{ i: number; ok: boolean; signature?: string; error?: string }> = [];
+
+    if (sigs.length > 0) {
+      for (let i = 0; i < sigs.length; i++) {
+        const sig = sigs[i];
+        try {
+          const conf = await conn.confirmTransaction(sig, CONFIRM_COMMITMENT);
+          if (conf.value.err) throw new Error(JSON.stringify(conf.value.err));
+          results.push({ i, ok: true, signature: sig });
+        } catch (e: any) {
+          results.push({ i, ok: false, signature: sig, error: e?.message ?? String(e) });
+        }
+      }
+
+      const firstOk = results.find((r) => r.ok)?.signature;
+      const firstMint = attempt.mints?.[0];
+
+      return NextResponse.json({
+        ok: true,
+        signature: firstOk,
+        results,
+        mint: firstMint?.mint,
+        imageUri: firstMint?.imageUri,
+        metadataUri: firstMint?.metadataUri,
+      });
+    }
+
+    // Back-compat: server sends raw tx bytes if client provides signedTxBase64s
+    const signedTxBase64s = Array.isArray(body.signedTxBase64s) ? body.signedTxBase64s : [];
+    if (signedTxBase64s.length < 1) {
+      return NextResponse.json({ ok: false, error: "Missing signature(s) or signedTxBase64s" }, { status: 400 });
+    }
 
     for (let i = 0; i < signedTxBase64s.length; i++) {
       try {
@@ -69,7 +109,17 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, results });
+    const firstOk = results.find((r) => r.ok)?.signature;
+    const firstMint = attempt.mints?.[0];
+
+    return NextResponse.json({
+      ok: true,
+      signature: firstOk,
+      results,
+      mint: firstMint?.mint,
+      imageUri: firstMint?.imageUri,
+      metadataUri: firstMint?.metadataUri,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Submit error" }, { status: 500 });
   }

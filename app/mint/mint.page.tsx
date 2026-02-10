@@ -1,74 +1,45 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { Transaction, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { Transaction, VersionedTransaction } from "@solana/web3.js";
+
 
 /** ---------- Shared helpers ---------- */
 function base64ToBytes(b64: string): Uint8Array {
-  if (!b64 || typeof b64 !== "string") throw new Error("Missing base64 string");
-
-  // trim + remove whitespace
-  let s = b64.trim().replace(/\s+/g, "");
-
-  // support base64url
-  s = s.replace(/-/g, "+").replace(/_/g, "/");
-
-  // pad to multiple of 4
-  while (s.length % 4 !== 0) s += "=";
-
-  // quick validation: only base64 chars
-  if (!/^[A-Za-z0-9+/=]+$/.test(s)) {
-    throw new Error(`Invalid base64 payload (starts with): ${b64.slice(0, 40)}`);
-  }
-
-  const bin = atob(s);
+  const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-
 function bytesToBase64(bytes: Uint8Array): string {
   let s = "";
   for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
   return btoa(s);
 }
+
+
+async function signSerialize(wallet: any, raw: Uint8Array): Promise<Uint8Array> {
+  if (!wallet.signTransaction) {
+    throw new Error("Your wallet does not support signTransaction.");
+  }
+
+  // Support both v0 (versioned) and legacy transactions
+  try {
+    const vtx = VersionedTransaction.deserialize(raw);
+    const signed = await wallet.signTransaction(vtx as any);
+    return signed.serialize();
+  } catch {
+    const tx = Transaction.from(raw);
+    const signed = await wallet.signTransaction(tx as any);
+    return signed.serialize();
+  }
+}
 function shortPk(pk: string) {
   return pk.length > 10 ? `${pk.slice(0, 4)}…${pk.slice(-4)}` : pk;
 }
 
-/**
- * IMPORTANT:
- * Prod is returning versioned payloads sometimes.
- * This supports:
- * 1) VersionedTransaction (v0 tx)
- * 2) Legacy Transaction
- * 3) VersionedMessage-only payload (wrap into VersionedTransaction)
- */
-type AnyTx = Transaction | VersionedTransaction;
-
-function deserializeAnyTx(raw: Uint8Array): AnyTx {
-  try {
-    return VersionedTransaction.deserialize(raw);
-  } catch {}
-
-  try {
-    return Transaction.from(raw);
-  } catch {}
-
-  try {
-    const msg = VersionedMessage.deserialize(raw);
-    return new VersionedTransaction(msg);
-  } catch {}
-
-  throw new Error("Unable to deserialize transaction/message from server response.");
-}
-
-async function signSerialize(wallet: any, raw: Uint8Array): Promise<Uint8Array> {
-  const tx = deserializeAnyTx(raw);
-  const signed = await wallet.signTransaction(tx as any);
-  return signed.serialize();
-}
+type MintMode = "FOUNDERS" | "PLAYER";
 
 /** ---------- Founders types (existing) ---------- */
 type QuoteRes =
@@ -104,7 +75,7 @@ type FoundersSubmitRes =
     }
   | { ok: false; error: string };
 
-/** ---------- Player types (updated) ---------- */
+/** ---------- Player types ---------- */
 type PlayerInitRes =
   | {
       ok: true;
@@ -112,9 +83,9 @@ type PlayerInitRes =
       count: number;
       packages: Array<{
         index: number;
-        serialNum: number;
+        serialNum?: number;
         serialStr: string;
-        backgroundId: number;
+        backgroundId?: number;
       }>;
     }
   | { ok: false; error: string };
@@ -133,10 +104,9 @@ type PlayerSubmitRes =
   | { ok: true; signature?: string; results?: Array<{ i: number; ok: boolean; signature?: string; error?: string }> }
   | { ok: false; error: string };
 
-type MintMode = "FOUNDERS" | "PLAYER";
-
 export default function MintPage() {
   const wallet = useWallet();
+  const { connection } = useConnection();
   const pubkey = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
 
   const [mode, setMode] = useState<MintMode>("FOUNDERS");
@@ -227,13 +197,22 @@ export default function MintPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ wallet: pubkey, quoteId: quote.quoteId }),
       });
-
       const build = (await buildRes.json()) as FoundersBuildRes;
       if (!build.ok) return setFoundersErr(build.error || "Build failed");
 
       const raw = base64ToBytes(build.txBase64);
 
-      const signedBytes = await signSerialize(wallet, raw);
+      let signedBytes: Uint8Array;
+      try {
+        const vtx = VersionedTransaction.deserialize(raw);
+        const signed = await wallet.signTransaction(vtx as any);
+        signedBytes = signed.serialize();
+      } catch {
+        const tx = Transaction.from(raw);
+        const signed = await wallet.signTransaction(tx as any);
+        signedBytes = signed.serialize();
+      }
+
       const signedTxBase64 = bytesToBase64(signedBytes);
 
       const submitRes = await fetch("/api/mint/submit", {
@@ -241,7 +220,6 @@ export default function MintPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ attemptId: build.attemptId, signedTxBase64 }),
       });
-
       const submit = (await submitRes.json()) as FoundersSubmitRes;
       setFoundersSubmit(submit);
       if (!submit.ok) return setFoundersErr(submit.error || "Submit failed");
@@ -260,101 +238,100 @@ export default function MintPage() {
   const foundersMintDisabled =
     busyFounders || !wallet.connected || !quote || (quote.ok && secondsLeft <= 0);
 
-  /** ---------- Player state ---------- */
+  /** ---------- Player state (locked to 1) ---------- */
   const [busyPlayer, setBusyPlayer] = useState(false);
   const [playerErr, setPlayerErr] = useState("");
   const [playerLastMint, setPlayerLastMint] = useState<{ imageUri?: string; metadataUri?: string; signature?: string } | null>(null);
 
-  // ✅ NEW PLAYER FLOW: server pays Irys, user signs only mint tx
-  async function doPlayerMintOne() {
-    setPlayerErr("");
-    setPlayerLastMint(null);
 
-    if (!wallet.connected || !pubkey) return setPlayerErr("Connect your wallet using the Connect button in the navbar.");
-    if (!wallet.signTransaction) return setPlayerErr("Your wallet does not support signTransaction.");
 
-    try {
-      setBusyPlayer(true);
+async function doPlayerMintOne() {
+  setPlayerErr("");
+  setPlayerLastMint(null);
 
-      // INIT
-      const initRes = await fetch("/api/player-mint/init", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ wallet: pubkey, count: 1 }),
-      });
+  if (!wallet.connected || !pubkey) return setPlayerErr("Connect your wallet using the Connect button in the navbar.");
+  if (!wallet.signTransaction) return setPlayerErr("Your wallet does not support signTransaction.");
 
-      if (!initRes.ok) {
-        const t = await initRes.text();
-        throw new Error(`init failed (${initRes.status}): ${t.slice(0, 300)}`);
-      }
+  try {
+    setBusyPlayer(true);
 
-      const init = (await initRes.json()) as PlayerInitRes;
-      if (!init.ok) throw new Error(init.error || "init failed");
-      if (!init.packages?.length) throw new Error("init returned no packages");
+    // INIT
+    const initRes = await fetch("/api/player-mint/init", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wallet: pubkey, count: 1 }),
+    });
 
-      const pkg = init.packages[0];
-
-      // BUILD (server generates PNG+metadata and uploads to Irys)
-      const buildRes = await fetch("/api/player-mint/build", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          buildId: init.buildId,
-          wallet: pubkey,
-          items: [{ index: pkg.index }],
-        }),
-      });
-
-      if (!buildRes.ok) {
-        const t = await buildRes.text();
-        throw new Error(`build failed (${buildRes.status}): ${t.slice(0, 300)}`);
-      }
-
-      const build = (await buildRes.json()) as PlayerBuildRes;
-      if (!build.ok) throw new Error(build.error || "build failed");
-
-      const txBase64 = build.txs?.[0]?.txBase64 || build.txBase64;
-      if (!txBase64 || typeof txBase64 !== "string") {
-        throw new Error("build did not return txBase64");
-      }
-
-      // SIGN (client)
-      const raw = base64ToBytes(txBase64);
-      const signedBytes = await signSerialize(wallet, raw);
-      const signedTxBase64 = bytesToBase64(signedBytes);
-
-      // SUBMIT
-      const submitRes = await fetch("/api/player-mint/submit", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          attemptId: build.attemptId,
-          signedTxBase64s: [signedTxBase64],
-        }),
-      });
-
-      if (!submitRes.ok) {
-        const t = await submitRes.text();
-        throw new Error(`submit failed (${submitRes.status}): ${t.slice(0, 300)}`);
-      }
-
-      const submit = (await submitRes.json()) as PlayerSubmitRes;
-      if (!submit.ok) throw new Error(submit.error || "submit failed");
-
-      const sig = submit.signature || submit.results?.find((r) => r.ok)?.signature || "";
-      const minted = (build as any).mints?.[0];
-
-      setPlayerLastMint({
-        imageUri: minted?.imageUri,
-        metadataUri: minted?.metadataUri,
-        signature: sig,
-      });
-    } catch (e: any) {
-      setPlayerErr(e?.message ?? "Player mint failed");
-    } finally {
-      setBusyPlayer(false);
+    if (!initRes.ok) {
+      const t = await initRes.text();
+      throw new Error(`init failed (${initRes.status}): ${t.slice(0, 300)}`);
     }
+
+    const init = (await initRes.json()) as PlayerInitRes;
+    if (!init.ok) throw new Error(init.error || "init failed");
+    if (!init.packages?.length) throw new Error("init returned no packages");
+
+    const pkg = init.packages[0];
+
+    // BUILD (server generates PNG + metadata and pays Irys)
+    const buildRes = await fetch("/api/player-mint/build", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        buildId: init.buildId,
+        wallet: pubkey,
+        items: [{ index: pkg.index }],
+      }),
+    });
+
+    if (!buildRes.ok) {
+      const t = await buildRes.text();
+      throw new Error(`build failed (${buildRes.status}): ${t.slice(0, 300)}`);
+    }
+
+    const build = (await buildRes.json()) as PlayerBuildRes;
+    if (!build.ok) throw new Error(build.error || "build failed");
+
+    const txBase64 = build.txs?.[0]?.txBase64 || build.txBase64;
+    if (!txBase64 || typeof txBase64 !== "string") throw new Error("build did not return txBase64");
+
+    // SIGN (ONE prompt)
+    const raw = base64ToBytes(txBase64);
+    const signedBytes = await signSerialize(wallet, raw);
+    const signedTxBase64 = bytesToBase64(signedBytes);
+
+    // SUBMIT
+    const submitRes = await fetch("/api/player-mint/submit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        attemptId: build.attemptId,
+        signedTxBase64s: [signedTxBase64],
+      }),
+    });
+
+    if (!submitRes.ok) {
+      const t = await submitRes.text();
+      throw new Error(`submit failed (${submitRes.status}): ${t.slice(0, 300)}`);
+    }
+
+    const submit = (await submitRes.json()) as PlayerSubmitRes;
+    if (!submit.ok) throw new Error(submit.error || "submit failed");
+
+    const sig = submit.signature || submit.results?.find((r) => r.ok)?.signature || "";
+    const minted = (build as any).mints?.[0];
+
+    setPlayerLastMint({
+      imageUri: minted?.imageUri,
+      metadataUri: minted?.metadataUri,
+      signature: sig,
+    });
+  } catch (e: any) {
+    setPlayerErr(e?.message ?? "Player mint failed");
+  } finally {
+    setBusyPlayer(false);
   }
+}
 
   const connectedLabel = wallet.connected && pubkey ? `Connected: ${shortPk(pubkey)}` : "Not connected";
 
@@ -371,9 +348,7 @@ export default function MintPage() {
       <section className="max-w-5xl mx-auto py-12 px-6">
         {/* ✅ BIG DECISION TOGGLE (CENTERED) */}
         <div className="flex flex-col items-center gap-3 mb-10">
-          <div className="text-sm text-slate-600">
-            Wallet: <span className="font-semibold">{connectedLabel}</span>
-          </div>
+          <div className="text-sm text-slate-600">Wallet: <span className="font-semibold">{connectedLabel}</span></div>
 
           <div className="inline-flex rounded-2xl p-2 bg-white border border-slate-200 shadow-sm">
             <button
@@ -433,6 +408,7 @@ export default function MintPage() {
                     </ol>
                   </div>
 
+                  {/* ✅ BIG GRADIENT ACTION BUTTONS */}
                   <div className="mt-4 flex flex-col sm:flex-row sm:justify-center gap-3">
                     <button
                       className="rounded-xl bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-bold px-8 py-4 text-base shadow hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -484,11 +460,14 @@ export default function MintPage() {
                 <div className="mt-4 space-y-3 text-slate-700">
                   <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
                     <ul className="list-disc pl-5 space-y-2 text-sm">
-                      <li>Player Series cards are free to mint (you only pay network + rent/account fees).</li>
-                      <li>You should only see one wallet approval now (the mint transaction). We pay the Irys upload fees.</li>
+                      <li>Player Series cards are free to mint (you only pay network + storage fees, usually ~$2 depending on Solana network conditions).</li>
+                      <li>These cards can be used in any game that supports Player Series cards on NFTBingo.net</li>
+                      <li>These cards are not be eligible for Founders Series rewards or special benefits. They will not be eligible for delegating or renting in our marketplace.</li>
+                      <li>Your wallet will likely ask you to verify 4 times. There are 2 for Irys upload and fee and 2 for wallet transfer and fee. This is where the ~$2 comes from. </li>
                     </ul>
                   </div>
 
+                  {/* ✅ BIG GRADIENT ACTION BUTTON */}
                   <div className="flex justify-center">
                     <button
                       className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-bold px-10 py-4 text-base shadow hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -502,6 +481,25 @@ export default function MintPage() {
                   {playerErr ? (
                     <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                       {playerErr}
+                    </div>
+                  ) : null}
+
+                  {playerLastMint?.metadataUri ? (
+                    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm">
+                      <div className="font-semibold text-emerald-800">Mint successful</div>
+                      <div className="mt-2 space-y-1 text-emerald-900/80 break-all">
+                        {playerLastMint.signature ? (
+                          <div>
+                            <span className="font-semibold">Tx:</span> {playerLastMint.signature}
+                          </div>
+                        ) : null}
+                        <div>
+                          <span className="font-semibold">Metadata:</span>{" "}
+                          <a className="underline" href={playerLastMint.metadataUri} target="_blank" rel="noreferrer">
+                            {playerLastMint.metadataUri}
+                          </a>
+                        </div>
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -566,14 +564,14 @@ export default function MintPage() {
             ) : (
               <>
                 <p className="mt-2 text-sm text-slate-600">
-                  Player Series cards are free mints used to join and play games on NFTBingo.net.
+                  Player Series cards are free mints used to join and play games on NFTBingo.net. They are intended to be an entry level card with standard payouts and no special benefits, but they can still be used in any game that supports Player Series cards.
                 </p>
 
                 <div className="mt-5 rounded-xl bg-gradient-to-r from-pink-50 via-fuchsia-50 to-indigo-50 border border-slate-200 p-4">
                   <div className="text-sm text-slate-700 space-y-2">
-                    <div><span className="font-semibold">Cost:</span> FREE + Solana rent/fees</div>
+                    <div><span className="font-semibold">Cost:</span> FREE + network + storage fees</div>
                     <div><span className="font-semibold">Limit:</span> 1 per mint</div>
-                    <div><span className="font-semibold">Uploads:</span> We pay Irys</div>
+                    <div><span className="font-semibold">Use:</span> enter games on NFTBingo.net</div>
                   </div>
                 </div>
 
@@ -597,7 +595,7 @@ export default function MintPage() {
         </div>
 
         <div className="mt-10 text-xs text-slate-500 text-center">
-          Player Series: you pay Solana rent/fees; we pay Irys uploads. Founders: standard mint flow.
+          Founders Series cards are USD pegged to $125 at mint time. Storage fees are payed by us, mint fees are payed by you. Player Series cards are free to mint, but you pay the network and storage fees (usually a few dollars). Prices may fluctuate based on Solana network conditions.
         </div>
       </section>
 

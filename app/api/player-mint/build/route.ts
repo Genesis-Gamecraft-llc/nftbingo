@@ -4,8 +4,20 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 
-import { createGenericFile, createNoopSigner, generateSigner, percentAmount, publicKey, transactionBuilder } from "@metaplex-foundation/umi";
-import { createNft, findMasterEditionPda, findMetadataPda, verifyCollectionV1 } from "@metaplex-foundation/mpl-token-metadata";
+import {
+  createGenericFile,
+  createNoopSigner,
+  generateSigner,
+  percentAmount,
+  publicKey,
+  transactionBuilder,
+} from "@metaplex-foundation/umi";
+import {
+  createNft,
+  findMasterEditionPda,
+  findMetadataPda,
+  verifyCollectionV1,
+} from "@metaplex-foundation/mpl-token-metadata";
 
 import { getUmiPlayerServer } from "@/lib/solana/umi.server";
 import { generateCardImage } from "@/lib/cardGenerator/generateImage";
@@ -16,7 +28,7 @@ export const dynamic = "force-dynamic";
 type BuildRequest = {
   buildId: string;
   wallet: string;
-  items: Array<{ index: number }>; // ✅ client now sends only index
+  items: Array<{ index: number }>;
 };
 
 type PlayerInitRecord = {
@@ -67,11 +79,29 @@ function getSeriesFolder(): string {
 }
 
 function bingoByLetter(numbers: number[]) {
-  const col = (c: number) => [numbers[c], numbers[c + 5], numbers[c + 10], numbers[c + 15], numbers[c + 20]];
-  return { B: col(0), I: col(1), N: col(2), G: col(3), O: col(4), freeSpace: { row: 2, col: 2, value: numbers[12] } };
+  const col = (c: number) => [
+    numbers[c],
+    numbers[c + 5],
+    numbers[c + 10],
+    numbers[c + 15],
+    numbers[c + 20],
+  ];
+  return {
+    B: col(0),
+    I: col(1),
+    N: col(2),
+    G: col(3),
+    O: col(4),
+    freeSpace: { row: 2, col: 2, value: numbers[12] },
+  };
 }
 
-function buildPlayerMetadata(opts: { serialStr: string; backgroundId: number; numbers: number[]; imageUri: string }) {
+function buildPlayerMetadata(opts: {
+  serialStr: string;
+  backgroundId: number;
+  numbers: number[];
+  imageUri: string;
+}) {
   const tierLabel = "Free";
   const name = `Player Series #${opts.serialStr}`;
   const symbol = process.env.PLAYER_SERIES_SYMBOL?.trim() || "NFTBingo";
@@ -87,8 +117,15 @@ function buildPlayerMetadata(opts: { serialStr: string; backgroundId: number; nu
       { trait_type: "Serial", value: opts.serialStr },
       { trait_type: "Background", value: String(opts.backgroundId) },
     ],
-    properties: { files: [{ uri: opts.imageUri, type: "image/png" }], category: "image" },
-    nftbingo: { quoteId: `player-${opts.serialStr}`, numbersByLetter, generatedAt: Date.now() },
+    properties: {
+      files: [{ uri: opts.imageUri, type: "image/png" }],
+      category: "image",
+    },
+    nftbingo: {
+      quoteId: `player-${opts.serialStr}`,
+      numbersByLetter,
+      generatedAt: Date.now(),
+    },
   };
 }
 
@@ -103,9 +140,8 @@ export async function POST(req: Request) {
     if (!buildId || !wallet) {
       return NextResponse.json({ ok: false, error: "Missing buildId or wallet" }, { status: 400 });
     }
-
-    if (items.length < 1 || items.length > 5) {
-      return NextResponse.json({ ok: false, error: "items must be 1..5" }, { status: 400 });
+    if (items.length !== 1) {
+      return NextResponse.json({ ok: false, error: "Player Series build supports exactly 1 item." }, { status: 400 });
     }
 
     const init = (await kv.get<PlayerInitRecord>(buildKey(buildId))) ?? null;
@@ -113,18 +149,13 @@ export async function POST(req: Request) {
     if (init.wallet !== wallet) return NextResponse.json({ ok: false, error: "Wallet mismatch" }, { status: 403 });
     if (Date.now() > init.expiresAt) return NextResponse.json({ ok: false, error: "Build expired" }, { status: 410 });
 
-    const byIndex = new Map(init.items.map((x) => [x.index, x]));
-
-    // validate requested index exists
     const idx = Number(items[0]?.index);
-    const expected = byIndex.get(idx);
+    const expected = init.items.find((x) => x.index === idx);
     if (!expected) return NextResponse.json({ ok: false, error: `Invalid index ${idx}` }, { status: 400 });
 
     const umi = getUmiPlayerServer();
 
-    const collectionMintStr = assertEnv("PLAYER_SERIES_COLLECTION_MINT");
-    const collectionMintPk = publicKey(collectionMintStr);
-
+    const collectionMintPk = publicKey(assertEnv("PLAYER_SERIES_COLLECTION_MINT"));
     const ownerPk = publicKey(wallet);
     const userNoopSigner = createNoopSigner(ownerPk);
 
@@ -138,7 +169,7 @@ export async function POST(req: Request) {
     const imageFile = createGenericFile(pngBytes, `player-${expected.serialStr}.png`, { contentType: "image/png" });
     const [imageUri] = await umi.uploader.upload([imageFile]);
 
-    // 3) Build + upload metadata JSON to Irys (server pays)
+    // 3) Upload metadata JSON to Irys (server pays)
     const md = buildPlayerMetadata({
       serialStr: expected.serialStr,
       backgroundId: expected.backgroundId,
@@ -150,7 +181,7 @@ export async function POST(req: Request) {
     const mdFile = createGenericFile(mdBytes, `player-${expected.serialStr}.json`, { contentType: "application/json" });
     const [metadataUri] = await umi.uploader.upload([mdFile]);
 
-    // 4) Build mint tx (user pays Solana fees)
+    // 4) Build mint tx (user pays Solana fees; server signs mint+collection authority)
     const mintSigner = generateSigner(umi);
     const name = `Player Series #${expected.serialStr}`;
     const symbol = process.env.PLAYER_SERIES_SYMBOL?.trim() || "NFTBingo";
@@ -159,9 +190,9 @@ export async function POST(req: Request) {
 
     builder = builder.add(
       createNft(umi, {
-        payer: userNoopSigner,        // ✅ user pays fees
-        mint: mintSigner,             // ✅ server signs mint keypair
-        authority: umi.identity,      // ✅ server collection authority
+        payer: userNoopSigner,          // user fee payer
+        mint: mintSigner,              // server mint signer
+        authority: umi.identity,        // server update authority
         name,
         symbol,
         uri: metadataUri,
@@ -187,7 +218,6 @@ export async function POST(req: Request) {
 
     builder.setFeePayer(userNoopSigner);
 
-    // server signs required signers; user must sign as fee payer
     const signedByServer = await builder.buildAndSign(umi);
     const txBytes = umi.transactions.serialize(signedByServer);
     const txBase64 = Buffer.from(txBytes).toString("base64");
@@ -216,7 +246,7 @@ export async function POST(req: Request) {
       attemptId,
       txs: [{ index: idx, serialStr: expected.serialStr, mint: mintSigner.publicKey.toString(), txBase64 }],
       mints: [{ index: idx, serialStr: expected.serialStr, mint: mintSigner.publicKey.toString(), imageUri, metadataUri }],
-      note: "Server paid Irys uploads. Client signs 1 mint tx (Solana fees) then submits.",
+      note: "Server paid Irys. Client sends the transaction (1 prompt) then calls submit with signature.",
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Build error" }, { status: 500 });
