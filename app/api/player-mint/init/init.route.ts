@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 type InitRequest = {
   wallet: string; // base58
-  count: number;  // user will send 1
+  count: number;  // locked to 1
 };
 
 type PlayerInitRecord = {
@@ -20,10 +20,10 @@ type PlayerInitRecord = {
   count: number;
   items: Array<{
     index: number;
-    serialNum: number;
-    serialStr: string;
+    serialNum: number;   // 1..∞
+    serialStr: string;   // "0001"
     backgroundId: number;
-    numbers: number[];
+    numbers: number[];   // 25 row-major, center index 12 = 0 (FREE)
   }>;
 };
 
@@ -32,6 +32,7 @@ function buildKey(buildId: string) {
 }
 
 function playerSerialKey() {
+  // Counter starts from 0 in KV; first incr => 1
   return `player:serial`;
 }
 
@@ -88,7 +89,7 @@ function generateBingoNumbers(seedStr: string): number[] {
 }
 
 function formatSerial4(n: number) {
-  return String(n).padStart(4, "0");
+  return String(n).padStart(4, "0"); // 0001
 }
 
 function getBackgroundId(): number {
@@ -103,11 +104,11 @@ export async function POST(req: Request) {
 
     const wallet = String(body.wallet || "").trim();
 
-    // ✅ HARD LOCK: 1 mint per request
-    const count = Number(body.count || 1);
-    if (count !== 1) {
+    // ✅ HARD LOCK: only allow 1 per mint (reject anything else)
+    const requested = Number(body.count || 1);
+    if (requested !== 1) {
       return NextResponse.json(
-        { ok: false, error: "Player Series mint is limited to 1 card per mint." },
+        { ok: false, error: "Player Series mint is limited to 1 card per mint (for reliability)." },
         { status: 400 }
       );
     }
@@ -116,14 +117,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing wallet" }, { status: 400 });
     }
 
-    const buildId = crypto.randomUUID();
-    const backgroundId = getBackgroundId();
+    // light rate-limit to reduce spam (init only)
+    const rlKey = `player:init:rl:${wallet}`;
+    const ok = await kv.set(rlKey, Date.now(), { nx: true, ex: 3 });
+    if (!ok) {
+      return NextResponse.json({ ok: false, error: "Slow down" }, { status: 429 });
+    }
 
-    // Allocate serial once (stable)
-    const serialNum = Number(await kv.incr(playerSerialKey()));
+    const buildId = crypto.randomUUID();
+    const backgroundId = getBackgroundId(); // bg0.png
+
+    // Allocate serial now (stable)
+    const serialNum = Number(await kv.incr(playerSerialKey())); // 1..∞
     const serialStr = formatSerial4(serialNum);
 
-    const numbers = generateBingoNumbers(`player:${buildId}:${wallet}:${serialNum}`);
+    const numbers = generateBingoNumbers(`player:${buildId}:${wallet}:${serialNum}:0`);
 
     const record: PlayerInitRecord = {
       buildId,
@@ -136,15 +144,16 @@ export async function POST(req: Request) {
 
     await kv.set(buildKey(buildId), record, { ex: 10 * 60 });
 
-    // ✅ No pngBase64 / no metadataTemplate returned.
-    // Server will generate PNG + metadata and upload to Irys in /build.
+    // NOTE: We no longer return PNG/metadata templates to the client.
+    // Server pays for Irys uploads during /api/player-mint/build.
     return NextResponse.json({
       ok: true,
       buildId,
       count: 1,
       backgroundId,
       packages: [{ index: 0, serialNum, serialStr, backgroundId }],
-      note: "Server pays Irys uploads during build. Client signs only the mint transaction (Solana fees).",
+      note:
+        "Server will generate PNG + metadata and pay Irys upload fees. Client will only sign the mint transaction (Solana fees).",
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Init error" }, { status: 500 });

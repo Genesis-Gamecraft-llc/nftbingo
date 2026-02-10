@@ -484,8 +484,8 @@ export default function MintPage() {
                 <div className="mt-4 space-y-3 text-slate-700">
                   <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
                     <ul className="list-disc pl-5 space-y-2 text-sm">
-                      <li>Player Series cards are free to mint (you only pay the Solana network fees).</li>
-                      <li>You should only see one wallet approval (the mint transaction) once you click the Mint Free Player Card button.</li>
+                      <li>Player Series cards are free to mint (you only pay network + rent/account fees).</li>
+                      <li>You should only see one wallet approval now (the mint transaction). We pay the Irys upload fees.</li>
                     </ul>
                   </div>
 
@@ -566,14 +566,14 @@ export default function MintPage() {
             ) : (
               <>
                 <p className="mt-2 text-sm text-slate-600">
-                  Player Series cards are free mints used to join and play games on NFTBingo.net with standard game payouts.
+                  Player Series cards are free mints used to join and play games on NFTBingo.net.
                 </p>
 
                 <div className="mt-5 rounded-xl bg-gradient-to-r from-pink-50 via-fuchsia-50 to-indigo-50 border border-slate-200 p-4">
                   <div className="text-sm text-slate-700 space-y-2">
-                    <div><span className="font-semibold">User Cost:</span> FREE + Solana fees ~$2</div>
+                    <div><span className="font-semibold">Cost:</span> FREE + Solana rent/fees</div>
                     <div><span className="font-semibold">Limit:</span> 1 per mint</div>
-                    <div><span className="font-semibold">Uploads:</span> We pay Irys storage and upload fees</div>
+                    <div><span className="font-semibold">Uploads:</span> We pay Irys</div>
                   </div>
                 </div>
 
@@ -597,7 +597,7 @@ export default function MintPage() {
         </div>
 
         <div className="mt-10 text-xs text-slate-500 text-center">
-          Irys storage and upload fees are paid by NFTBingo. User pays the SOL transaction fees.
+          Player Series: you pay Solana rent/fees; we pay Irys uploads. Founders: standard mint flow.
         </div>
       </section>
 

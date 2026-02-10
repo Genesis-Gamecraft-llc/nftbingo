@@ -4,21 +4,11 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 
-import {
-  createNoopSigner,
-  generateSigner,
-  percentAmount,
-  publicKey,
-  transactionBuilder,
-} from "@metaplex-foundation/umi";
-import {
-  createNft,
-  findMasterEditionPda,
-  findMetadataPda,
-  verifyCollectionV1,
-} from "@metaplex-foundation/mpl-token-metadata";
+import { createGenericFile, createNoopSigner, generateSigner, percentAmount, publicKey, transactionBuilder } from "@metaplex-foundation/umi";
+import { createNft, findMasterEditionPda, findMetadataPda, verifyCollectionV1 } from "@metaplex-foundation/mpl-token-metadata";
 
-import { getUmiServer } from "@/lib/solana/umi.server";
+import { getUmiPlayerServer } from "@/lib/solana/umi.server";
+import { generateCardImage } from "@/lib/cardGenerator/generateImage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +16,7 @@ export const dynamic = "force-dynamic";
 type BuildRequest = {
   buildId: string;
   wallet: string;
-  items: Array<{ index: number; imageUri: string; metadataUri: string }>;
+  items: Array<{ index: number }>; // ✅ client now sends only index
 };
 
 type PlayerInitRecord = {
@@ -55,7 +45,7 @@ type AttemptRecord = {
     mint: string;
     imageUri: string;
     metadataUri: string;
-    txBase64: string; // <-- store unsigned server-signed tx
+    txBase64: string;
   }>;
 };
 
@@ -66,51 +56,39 @@ function attemptKey(attemptId: string) {
   return `player:attempt:${attemptId}`;
 }
 
-async function fetchJson(uri: string) {
-  const res = await fetch(uri, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Failed to fetch metadataUri: ${res.status}`);
-  return res.json();
-}
-
 function assertEnv(name: string): string {
   const v = process.env[name]?.trim();
   if (!v) throw new Error(`Missing ${name} env var`);
   return v;
 }
 
-function bingoByLetter(numbers: number[]) {
-  const col = (c: number) => [
-    numbers[c],
-    numbers[c + 5],
-    numbers[c + 10],
-    numbers[c + 15],
-    numbers[c + 20],
-  ];
-  return {
-    B: col(0),
-    I: col(1),
-    N: col(2),
-    G: col(3),
-    O: col(4),
-    freeSpace: { row: 2, col: 2, value: numbers[12] },
-  };
+function getSeriesFolder(): string {
+  return process.env.PLAYER_SERIES_SERIES_FOLDER?.trim() || "player";
 }
 
-function normalizeNumbersByLetter(md: any) {
-  const nbl = md?.nftbingo?.numbersByLetter;
-  if (!nbl) return null;
+function bingoByLetter(numbers: number[]) {
+  const col = (c: number) => [numbers[c], numbers[c + 5], numbers[c + 10], numbers[c + 15], numbers[c + 20]];
+  return { B: col(0), I: col(1), N: col(2), G: col(3), O: col(4), freeSpace: { row: 2, col: 2, value: numbers[12] } };
+}
 
-  const letters = ["B", "I", "N", "G", "O"] as const;
-  for (const L of letters) {
-    if (!Array.isArray(nbl[L]) || nbl[L].length !== 5) return null;
-  }
+function buildPlayerMetadata(opts: { serialStr: string; backgroundId: number; numbers: number[]; imageUri: string }) {
+  const tierLabel = "Free";
+  const name = `Player Series #${opts.serialStr}`;
+  const symbol = process.env.PLAYER_SERIES_SYMBOL?.trim() || "NFTBingo";
+  const { freeSpace, ...numbersByLetter } = bingoByLetter(opts.numbers);
 
   return {
-    B: nbl.B.map((x: any) => Number(x)),
-    I: nbl.I.map((x: any) => Number(x)),
-    N: nbl.N.map((x: any) => Number(x)),
-    G: nbl.G.map((x: any) => Number(x)),
-    O: nbl.O.map((x: any) => Number(x)),
+    name,
+    symbol,
+    description: `NFTBingo Player Series - ${tierLabel} Tier #${opts.serialStr}`,
+    image: opts.imageUri,
+    attributes: [
+      { trait_type: "Tier", value: tierLabel },
+      { trait_type: "Serial", value: opts.serialStr },
+      { trait_type: "Background", value: String(opts.backgroundId) },
+    ],
+    properties: { files: [{ uri: opts.imageUri, type: "image/png" }], category: "image" },
+    nftbingo: { quoteId: `player-${opts.serialStr}`, numbersByLetter, generatedAt: Date.now() },
   };
 }
 
@@ -125,6 +103,7 @@ export async function POST(req: Request) {
     if (!buildId || !wallet) {
       return NextResponse.json({ ok: false, error: "Missing buildId or wallet" }, { status: 400 });
     }
+
     if (items.length < 1 || items.length > 5) {
       return NextResponse.json({ ok: false, error: "items must be 1..5" }, { status: 400 });
     }
@@ -136,42 +115,13 @@ export async function POST(req: Request) {
 
     const byIndex = new Map(init.items.map((x) => [x.index, x]));
 
-    // Verify uploaded metadata matches what server generated
-    for (const it of items) {
-      const idx = Number(it.index);
-      const expected = byIndex.get(idx);
-      if (!expected) return NextResponse.json({ ok: false, error: `Invalid index ${idx}` }, { status: 400 });
+    // validate requested index exists
+    const idx = Number(items[0]?.index);
+    const expected = byIndex.get(idx);
+    if (!expected) return NextResponse.json({ ok: false, error: `Invalid index ${idx}` }, { status: 400 });
 
-      const md = await fetchJson(it.metadataUri);
+    const umi = getUmiPlayerServer();
 
-      if (String(md?.image || "") !== String(it.imageUri || "")) {
-        return NextResponse.json({ ok: false, error: `Metadata image mismatch at index ${idx}` }, { status: 400 });
-      }
-
-      const tierAttr = Array.isArray(md?.attributes) ? md.attributes.find((a: any) => a?.trait_type === "Tier") : null;
-      if (String(tierAttr?.value || "") !== "Free") {
-        return NextResponse.json({ ok: false, error: `Tier must be Free at index ${idx}` }, { status: 400 });
-      }
-
-      const serialAttr = Array.isArray(md?.attributes) ? md.attributes.find((a: any) => a?.trait_type === "Serial") : null;
-      if (String(serialAttr?.value || "") !== expected.serialStr) {
-        return NextResponse.json({ ok: false, error: `Serial mismatch at index ${idx}` }, { status: 400 });
-      }
-
-      const got = normalizeNumbersByLetter(md);
-      if (!got) return NextResponse.json({ ok: false, error: `Missing/invalid numbersByLetter at index ${idx}` }, { status: 400 });
-
-      const { freeSpace, ...expectedByLetter } = bingoByLetter(expected.numbers);
-      for (const L of ["B", "I", "N", "G", "O"] as const) {
-        for (let k = 0; k < 5; k++) {
-          if (Number(got[L][k]) !== Number((expectedByLetter as any)[L][k])) {
-            return NextResponse.json({ ok: false, error: `numbersByLetter mismatch at ${L}[${k}] index ${idx}` }, { status: 400 });
-          }
-        }
-      }
-    }
-
-    const umi = getUmiServer();
     const collectionMintStr = assertEnv("PLAYER_SERIES_COLLECTION_MINT");
     const collectionMintPk = publicKey(collectionMintStr);
 
@@ -179,69 +129,84 @@ export async function POST(req: Request) {
     const userNoopSigner = createNoopSigner(ownerPk);
 
     const attemptId = crypto.randomUUID();
-    const mints: AttemptRecord["mints"] = [];
+    const seriesFolder = getSeriesFolder();
 
-    // ✅ Build ONE tx per mint to avoid tx-size failures
-    for (const it of items) {
-      const idx = Number(it.index);
-      const expected = byIndex.get(idx)!;
+    // 1) Generate PNG server-side
+    const pngBytes = await generateCardImage(expected.numbers, expected.backgroundId, { seriesFolder });
 
-      const mintSigner = generateSigner(umi);
-      const name = `Player Series #${expected.serialStr}`;
-      const symbol = process.env.PLAYER_SERIES_SYMBOL?.trim() || "NFTBingo";
+    // 2) Upload PNG to Irys (server pays)
+    const imageFile = createGenericFile(pngBytes, `player-${expected.serialStr}.png`, { contentType: "image/png" });
+    const [imageUri] = await umi.uploader.upload([imageFile]);
 
-      let builder = transactionBuilder();
+    // 3) Build + upload metadata JSON to Irys (server pays)
+    const md = buildPlayerMetadata({
+      serialStr: expected.serialStr,
+      backgroundId: expected.backgroundId,
+      numbers: expected.numbers,
+      imageUri,
+    });
 
-      builder = builder.add(
-        createNft(umi, {
-          payer: userNoopSigner,
-          mint: mintSigner,
-          authority: umi.identity,
-          name,
-          symbol,
-          uri: it.metadataUri,
-          sellerFeeBasisPoints: percentAmount(0, 2),
-          tokenOwner: ownerPk,
-          collection: { key: collectionMintPk, verified: false },
-        })
-      );
+    const mdBytes = new TextEncoder().encode(JSON.stringify(md));
+    const mdFile = createGenericFile(mdBytes, `player-${expected.serialStr}.json`, { contentType: "application/json" });
+    const [metadataUri] = await umi.uploader.upload([mdFile]);
 
-      const metadataPda = findMetadataPda(umi, { mint: mintSigner.publicKey });
-      const collectionMetadataPda = findMetadataPda(umi, { mint: collectionMintPk });
-      const collectionMasterEditionPda = findMasterEditionPda(umi, { mint: collectionMintPk });
+    // 4) Build mint tx (user pays Solana fees)
+    const mintSigner = generateSigner(umi);
+    const name = `Player Series #${expected.serialStr}`;
+    const symbol = process.env.PLAYER_SERIES_SYMBOL?.trim() || "NFTBingo";
 
-      builder = builder.add(
-        verifyCollectionV1(umi, {
-          metadata: metadataPda,
-          collectionMint: collectionMintPk,
-          authority: umi.identity,
-          collectionMetadata: collectionMetadataPda,
-          collectionMasterEdition: collectionMasterEditionPda,
-        })
-      );
+    let builder = transactionBuilder();
 
-      builder.setFeePayer(userNoopSigner);
+    builder = builder.add(
+      createNft(umi, {
+        payer: userNoopSigner,        // ✅ user pays fees
+        mint: mintSigner,             // ✅ server signs mint keypair
+        authority: umi.identity,      // ✅ server collection authority
+        name,
+        symbol,
+        uri: metadataUri,
+        sellerFeeBasisPoints: percentAmount(0, 2),
+        tokenOwner: ownerPk,
+        collection: { key: collectionMintPk, verified: false },
+      })
+    );
 
-      const signedByServer = await builder.buildAndSign(umi);
-      const txBytes = umi.transactions.serialize(signedByServer);
-      const txBase64 = Buffer.from(txBytes).toString("base64");
+    const metadataPda = findMetadataPda(umi, { mint: mintSigner.publicKey });
+    const collectionMetadataPda = findMetadataPda(umi, { mint: collectionMintPk });
+    const collectionMasterEditionPda = findMasterEditionPda(umi, { mint: collectionMintPk });
 
-      mints.push({
-        index: idx,
-        serialStr: expected.serialStr,
-        mint: mintSigner.publicKey.toString(),
-        imageUri: it.imageUri,
-        metadataUri: it.metadataUri,
-        txBase64,
-      });
-    }
+    builder = builder.add(
+      verifyCollectionV1(umi, {
+        metadata: metadataPda,
+        collectionMint: collectionMintPk,
+        authority: umi.identity,
+        collectionMetadata: collectionMetadataPda,
+        collectionMasterEdition: collectionMasterEditionPda,
+      })
+    );
+
+    builder.setFeePayer(userNoopSigner);
+
+    // server signs required signers; user must sign as fee payer
+    const signedByServer = await builder.buildAndSign(umi);
+    const txBytes = umi.transactions.serialize(signedByServer);
+    const txBase64 = Buffer.from(txBytes).toString("base64");
 
     const attempt: AttemptRecord = {
       attemptId,
       buildId,
       wallet,
       createdAt: Date.now(),
-      mints,
+      mints: [
+        {
+          index: idx,
+          serialStr: expected.serialStr,
+          mint: mintSigner.publicKey.toString(),
+          imageUri,
+          metadataUri,
+          txBase64,
+        },
+      ],
     };
 
     await kv.set(attemptKey(attemptId), attempt, { ex: 60 * 60 });
@@ -249,9 +214,9 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       attemptId,
-      txs: mints.map(({ index, serialStr, mint, txBase64 }) => ({ index, serialStr, mint, txBase64 })),
-      mints: mints.map(({ index, serialStr, mint, imageUri, metadataUri }) => ({ index, serialStr, mint, imageUri, metadataUri })),
-      note: "Client signs each tx (prefer signAllTransactions) then submit array to /api/player-mint/submit.",
+      txs: [{ index: idx, serialStr: expected.serialStr, mint: mintSigner.publicKey.toString(), txBase64 }],
+      mints: [{ index: idx, serialStr: expected.serialStr, mint: mintSigner.publicKey.toString(), imageUri, metadataUri }],
+      note: "Server paid Irys uploads. Client signs 1 mint tx (Solana fees) then submits.",
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Build error" }, { status: 500 });

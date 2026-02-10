@@ -1,115 +1,52 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
-
-/**
- * MVP: /play page
- * - Local state driven (works without backend)
- * - Has clear TODOs for API wiring
- *
- * IMPORTANT:
- * - Now loads wallet NFTs from /api/cards/owned and supports Founders/Player/VIP.
- * - Entries can be multi-selected and charge per card (single tx for total).
- */
 
 type GameType = "STANDARD" | "FOUR_CORNERS" | "BLACKOUT";
 type GameStatus = "CLOSED" | "OPEN" | "LOCKED" | "PAUSED" | "ENDED";
 
-type CardType = "PLAYER" | "FOUNDERS" | "VIP";
+type CardType = "PLAYER" | "FOUNDERS";
 
 type BingoCard = {
-  id: string; // mint address (real)
+  id: string; // mint
   label: string;
   type: CardType;
-  grid: number[][]; // 5x5, center may be 0 for FREE
+  grid: number[][]; // 5x5, center FREE = 0
 };
 
 type ClaimResult = "ACCEPTED" | "REJECTED";
 
-// Founders collection address (provided)
-const FOUNDERS_COLLECTION = "JBg3RkePxmRYjb6b4qLQ93EatBpW8cFboc3aGW2oGDpn";
-
-// Collections (from env; used for UI labels only — server route filters allowed collections)
-const PLAYER_COLLECTION = process.env.NEXT_PUBLIC_PLAYER_SERIES_COLLECTION_MINT || "";
-const VIP_COLLECTION = process.env.NEXT_PUBLIC_VIP_COLLECTION_MINT || "";
-
-// Entry destination wallet (set in env)
-const GAME_POT_WALLET = process.env.NEXT_PUBLIC_GAME_POT_WALLET || "";
-
-// RPC (prefer proxy or provided public RPC)
-const RPC_URL =
-  process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-  process.env.NEXT_PUBLIC_SOLANA_RPC ||
-  "https://api.mainnet-beta.solana.com";
-
-function mintToSeed(mint: string): number {
-  // stable-ish seed from mint string
-  let h = 2166136261;
-  for (let i = 0; i < mint.length; i++) {
-    h ^= mint.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return Math.abs(h) % 1_000_000;
-}
-
-function numbersByLetterToGrid(numbersByLetter: Record<string, number[]> | undefined): number[][] | null {
-  if (!numbersByLetter) return null;
-
-  const letters = ["B", "I", "N", "G", "O"];
-  const cols: number[][] = letters.map((L) => {
-    const arr = (numbersByLetter as any)[L] || (numbersByLetter as any)[L.toLowerCase()] || [];
-    return Array.isArray(arr) ? arr.map((x) => Number(x)) : [];
-  });
-
-  // need at least 5 numbers per col (N can be 4 with free space)
-  for (let c = 0; c < 5; c++) {
-    if (c === 2) {
-      // N column: allow 4 or 5
-      if (cols[c].length < 4) return null;
-    } else {
-      if (cols[c].length < 5) return null;
-    }
-  }
-
-  const grid = Array.from({ length: 5 }, () => Array(5).fill(0));
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 5; c++) {
-      if (r === 2 && c === 2) {
-        grid[r][c] = 0; // free space
-      } else if (c === 2 && cols[c].length === 4) {
-        // N has 4 values: skip center
-        const idx = r < 2 ? r : r - 1;
-        grid[r][c] = cols[c][idx] ?? 0;
-      } else {
-        grid[r][c] = cols[c][r] ?? 0;
-      }
-    }
-  }
-  return grid;
-}
-
-async function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function withRetries<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
-  let lastErr: any;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (e: any) {
-      lastErr = e;
-      await sleep(250 * (i + 1));
-    }
-  }
-  throw lastErr;
-}
-
 /** ===== Helpers ===== */
 
+async function confirmSignatureByPolling(
+  connection: Connection,
+  signature: string,
+  timeoutMs = 60_000
+) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const st = await connection.getSignatureStatuses([signature], {
+      searchTransactionHistory: true,
+    });
+
+    const s = st?.value?.[0];
+    if (s?.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(s.err)}`);
+    }
+
+    // confirmationStatus can be "processed" | "confirmed" | "finalized"
+    if (s?.confirmationStatus === "confirmed" || s?.confirmationStatus === "finalized") {
+      return;
+    }
+
+    // small delay
+    await new Promise((r) => setTimeout(r, 800));
+  }
+
+  throw new Error("Timed out confirming transaction (polling).");
+}
 function formatSol(n: number): string {
   if (!Number.isFinite(n)) return "0";
   const s = n.toFixed(n >= 1 ? 3 : n >= 0.1 ? 4 : 5);
@@ -138,12 +75,12 @@ function isFreeCell(r: number, c: number) {
 
 function cellMarked(grid: number[][], calledSet: Set<number>, r: number, c: number): boolean {
   if (isFreeCell(r, c)) return true;
-  const value = grid[r][c];
-  return calledSet.has(value);
+  const v = grid[r][c];
+  if (v === 0) return true;
+  return calledSet.has(v);
 }
 
 function hasStandardBingo(grid: number[][], calledSet: Set<number>): boolean {
-  // rows
   for (let r = 0; r < 5; r++) {
     let ok = true;
     for (let c = 0; c < 5; c++) {
@@ -155,7 +92,6 @@ function hasStandardBingo(grid: number[][], calledSet: Set<number>): boolean {
     if (ok) return true;
   }
 
-  // cols
   for (let c = 0; c < 5; c++) {
     let ok = true;
     for (let r = 0; r < 5; r++) {
@@ -167,7 +103,6 @@ function hasStandardBingo(grid: number[][], calledSet: Set<number>): boolean {
     if (ok) return true;
   }
 
-  // diagonals
   let ok1 = true;
   for (let i = 0; i < 5; i++) {
     if (!cellMarked(grid, calledSet, i, i)) {
@@ -212,7 +147,77 @@ function isWinningByType(gameType: GameType, grid: number[][], calledSet: Set<nu
   return hasBlackout(grid, calledSet);
 }
 
-/** ===== Demo cards (fallback only) ===== */
+function toNum(v: any): number {
+  if (v === "FREE") return 0;
+  if (v === null || v === undefined) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Convert numbersByLetter → 5x5 grid
+ *
+ * Supports BOTH:
+ * - N length 4: [n0,n1,n2,n3] (no center)
+ * - N length 5: [n0,n1,FREE/0,n3,n4]
+ *
+ * Fixes your bug where N[2] (0) was being placed under FREE and bottom went missing.
+ */
+function gridFromNumbersByLetter(nbl: any): number[][] | null {
+  try {
+    const B: any[] = nbl?.B ?? [];
+    const I: any[] = nbl?.I ?? [];
+    const N: any[] = nbl?.N ?? [];
+    const G: any[] = nbl?.G ?? [];
+    const O: any[] = nbl?.O ?? [];
+
+    if (B.length < 5 || I.length < 5 || G.length < 5 || O.length < 5) return null;
+    if (!(N.length === 4 || N.length === 5)) return null;
+
+    const grid: number[][] = Array.from({ length: 5 }, () => Array(5).fill(0));
+
+    for (let r = 0; r < 5; r++) grid[r][0] = toNum(B[r]);
+    for (let r = 0; r < 5; r++) grid[r][1] = toNum(I[r]);
+
+    // N column:
+    // If N is 5 with FREE/0 in the middle, use indices 0,1,3,4 for rows 0,1,3,4.
+    // If N is 4, use indices 0,1,2,3.
+    const nTop0 = toNum(N[0]);
+    const nTop1 = toNum(N[1]);
+    const nBot0 = toNum(N.length === 5 ? N[3] : N[2]);
+    const nBot1 = toNum(N.length === 5 ? N[4] : N[3]);
+
+    grid[0][2] = nTop0;
+    grid[1][2] = nTop1;
+    grid[2][2] = 0; // FREE
+    grid[3][2] = nBot0;
+    grid[4][2] = nBot1;
+
+    for (let r = 0; r < 5; r++) grid[r][3] = toNum(G[r]);
+    for (let r = 0; r < 5; r++) grid[r][4] = toNum(O[r]);
+
+    return grid;
+  } catch {
+    return null;
+  }
+}
+
+// Backward-compatible alias (your mapping calls this)
+function numbersByLetterToGrid(nbl: any) {
+  return gridFromNumbersByLetter(nbl);
+}
+
+// Deterministic seed from mint string (fallback demo grid)
+function mintToSeed(mint: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < mint.length; i++) {
+    h ^= mint.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) || 1;
+}
+
+/** ===== Demo cards (only when wallet not connected / no cards) ===== */
 
 function demoCard(label: string, type: CardType, seed: number): BingoCard {
   const rng = mulberry32(seed);
@@ -264,117 +269,119 @@ function shuffle<T>(arr: T[], rng: () => number) {
   }
 }
 
-/** ===== UI components ===== */
-
-function Pill({ label, active, onClick }: { label: string; active?: boolean; onClick?: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "px-3 py-1 rounded-full text-sm font-medium transition",
-        active ? "bg-pink-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
-      ].join(" ")}
-    >
-      {label}
-    </button>
-  );
-}
+/** ===== Small UI components ===== */
 
 function PotCard({ title, value }: { title: string; value: string }) {
   return (
     <div className="bg-white rounded-2xl shadow p-5 border border-slate-100">
       <div className="text-sm text-slate-600">{title}</div>
-      <div className="text-2xl font-extrabold text-slate-900 mt-1">{value}</div>
+      <div className="mt-2 text-2xl font-extrabold text-slate-900">{value}</div>
     </div>
   );
 }
 
-function MiniGrid({ grid, calledSet }: { grid: number[][]; calledSet: Set<number> }) {
+function gameTypeLabel(t: GameType) {
+  if (t === "STANDARD") return "Standard";
+  if (t === "FOUR_CORNERS") return "4 Corners";
+  return "Blackout";
+}
+
+function BingoGrid({ grid, calledSet }: { grid: number[][]; calledSet: Set<number> }) {
+  const headers = ["B", "I", "N", "G", "O"];
   return (
-    <div className="grid grid-cols-5 gap-1">
-      {grid.map((row, r) =>
-        row.map((n, c) => {
-          const marked = cellMarked(grid, calledSet, r, c);
-          return (
-            <div
-              key={`${r}-${c}`}
-              className={[
-                "h-8 flex items-center justify-center rounded-md text-xs font-semibold border",
-                isFreeCell(r, c)
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                  : marked
-                    ? "bg-indigo-50 border-indigo-200 text-indigo-800"
-                    : "bg-white border-slate-200 text-slate-700",
-              ].join(" ")}
-            >
-              {isFreeCell(r, c) ? "FREE" : n}
-            </div>
-          );
-        })
-      )}
+    <div className="rounded-xl border border-slate-200 overflow-hidden">
+      <div className="grid grid-cols-5">
+        {headers.map((h) => (
+          <div key={h} className="bg-slate-900 text-white text-center font-extrabold py-2">
+            {h}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-5">
+        {grid.flatMap((row, r) =>
+          row.map((v, c) => {
+            const free = r === 2 && c === 2;
+            const marked = free || v === 0 || calledSet.has(v);
+            return (
+              <div
+                key={`${r}-${c}`}
+                className={[
+                  "aspect-square flex items-center justify-center font-extrabold text-lg border-t border-slate-200 border-r border-slate-200 last:border-r-0",
+                  marked ? "bg-emerald-100 text-emerald-900" : "bg-white text-slate-900",
+                ].join(" ")}
+              >
+                {free ? "FREE" : v}
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
 
-function CardCarousel({ cards, calledSet, gameType }: { cards: BingoCard[]; calledSet: Set<number>; gameType: GameType }) {
+function CardCarousel({
+  cards,
+  calledSet,
+  gameType,
+}: {
+  cards: BingoCard[];
+  calledSet: Set<number>;
+  gameType: GameType;
+}) {
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
-    setIdx(0);
-  }, [cards.length]);
+    if (idx >= cards.length) setIdx(0);
+  }, [cards.length, idx]);
 
-  if (cards.length === 0) return null;
-
-  const current = cards[clamp(idx, 0, cards.length - 1)];
-  const isWinning = isWinningByType(gameType, current.grid, calledSet);
+  const card = cards[idx];
+  const isWin = isWinningByType(gameType, card.grid, calledSet);
 
   return (
-    <div className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <div className="font-bold text-slate-900 truncate">{current.label}</div>
-          <div className="text-xs text-slate-600">
-            Type:{" "}
-            <span
-              className={
-                current.type === "FOUNDERS"
-                  ? "text-indigo-700 font-semibold"
-                  : current.type === "VIP"
-                    ? "text-amber-700 font-semibold"
-                    : "text-slate-700 font-semibold"
-              }
-            >
-              {current.type === "FOUNDERS" ? "Founders Series" : current.type === "VIP" ? "VIP Series" : "Player Series"}
-            </span>
-            {isWinning ? <span className="ml-2 text-emerald-700 font-semibold">— WINNING</span> : null}
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="font-semibold text-slate-900">{card.label}</div>
+          <div className="text-xs text-slate-600 mt-1">
+            {card.type === "FOUNDERS" ? "⭐ Founders Series" : "🎫 Player Series"} • Card {idx + 1} of {cards.length}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {isWin ? (
+            <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
+              BINGO READY
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold">Playing</span>
+          )}
+        </div>
+      </div>
+
+      <BingoGrid grid={card.grid} calledSet={calledSet} />
+
+      {cards.length > 1 && (
+        <div className="mt-4 flex items-center justify-between">
           <button
             type="button"
-            onClick={() => setIdx((v) => clamp(v - 1, 0, cards.length - 1))}
-            disabled={idx === 0}
-            className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40"
+            onClick={() => setIdx((i) => (i - 1 + cards.length) % cards.length)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-900 hover:bg-slate-50"
           >
             Prev
           </button>
           <button
             type="button"
-            onClick={() => setIdx((v) => clamp(v + 1, 0, cards.length - 1))}
-            disabled={idx === cards.length - 1}
-            className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40"
+            onClick={() => setIdx((i) => (i + 1) % cards.length)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-900 hover:bg-slate-50"
           >
             Next
           </button>
         </div>
-      </div>
-
-      <MiniGrid grid={current.grid} calledSet={calledSet} />
+      )}
 
       <div className="mt-3 text-xs text-slate-500">
-        Card ID (mint): <span className="font-mono">{current.id}</span>
+        Game type: <span className="font-semibold text-slate-900">{gameTypeLabel(gameType)}</span>
       </div>
     </div>
   );
@@ -397,21 +404,41 @@ export default function PlayPage() {
 
   // Selected/entered cards
   const [selectedCards, setSelectedCards] = useState<BingoCard[]>([]);
+  const [enteredCards, setEnteredCards] = useState<BingoCard[]>([]); // ✅ paid entries only
   const [maxCards] = useState<number>(5);
 
   // Wallet inventory (fetched from /api/cards/owned; falls back to demo if not connected)
   const [walletCards, setWalletCards] = useState<BingoCard[]>(() => [
     demoCard("Founders Series Card (Demo)", "FOUNDERS", 41),
-    demoCard("VIP Series Card (Demo)", "VIP", 77),
     demoCard("Player Series Card (Demo)", "PLAYER", 101),
   ]);
   const [cardsLoading, setCardsLoading] = useState<boolean>(false);
   const [cardsError, setCardsError] = useState<string>("");
 
-  // Payment/entry lock for this game (prevents swapping cards after paying)
+  // Payment/entry lock for this game
   const [entriesLocked, setEntriesLocked] = useState<boolean>(false);
   const [lastEntrySig, setLastEntrySig] = useState<string>("");
   const [lastEntryTotalSol, setLastEntryTotalSol] = useState<number>(0);
+  const [paying, setPaying] = useState<boolean>(false);
+
+  // Admin UI is gated by cookie set by /admin
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/admin/me", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { isAdmin: false }))
+      .then((d) => {
+        if (!alive) return;
+        setIsAdmin(Boolean(d?.isAdmin));
+      })
+      .catch(() => {
+        if (!alive) return;
+        setIsAdmin(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Claim UX + basic anti-spam
   const [lastClaimAt, setLastClaimAt] = useState<number>(0);
@@ -446,11 +473,7 @@ export default function PlayPage() {
       setCardsError("");
 
       try {
-        const res = await fetch(
-  `/api/cards/owned?owner=${encodeURIComponent(walletAddress)}&t=${Date.now()}`,
-  { cache: "no-store" }
-);
-
+        const res = await fetch(`/api/cards/owned?owner=${encodeURIComponent(walletAddress)}`, { cache: "no-store" });
         const j = await res.json();
         if (!j?.ok) throw new Error(j?.error || "Failed to load cards");
 
@@ -458,7 +481,7 @@ export default function PlayPage() {
 
         const mapped: BingoCard[] = owned.map((c) => {
           const series = String(c.series || "").toUpperCase();
-          const type: CardType = series === "FOUNDERS" ? "FOUNDERS" : series === "VIP" ? "VIP" : "PLAYER";
+          const type: CardType = series === "FOUNDERS" ? "FOUNDERS" : "PLAYER";
 
           const grid =
             numbersByLetterToGrid(c.numbersByLetter) ||
@@ -466,10 +489,7 @@ export default function PlayPage() {
 
           return {
             id: String(c.mint || ""),
-            label: String(
-              c.name ||
-                (type === "FOUNDERS" ? "Founders Series" : type === "VIP" ? "VIP Series" : "Player Series")
-            ),
+            label: String(c.name || (type === "FOUNDERS" ? "Founders Series" : "Player Series")),
             type,
             grid,
           };
@@ -491,41 +511,6 @@ export default function PlayPage() {
       cancelled = true;
     };
   }, [wallet.connected, walletAddress]);
-
-  // Derived: entries count & pots
-  const entriesCount = selectedCards.length;
-  const totalPot = entriesCount * entryFeeSol;
-
-  const playerSeriesPot = totalPot * 0.75;
-  const foundersBonus = totalPot * 0.05;
-  const foundersSeriesPot = playerSeriesPot + foundersBonus; // 80%
-  const jackpotPot = totalPot * 0.05;
-
-  // Derived: winning cards
-  const winningCards = useMemo(() => {
-    if (status !== "LOCKED" && status !== "PAUSED") return [];
-    return selectedCards.filter((c) => isWinningByType(gameType, c.grid, calledSet));
-  }, [selectedCards, calledSet, status, gameType]);
-
-  const canClaimBingo = useMemo(() => {
-    if (status !== "LOCKED" && status !== "PAUSED") return false;
-    if (winningCards.length === 0) return false;
-    if (invalidStrikes >= 3) return false;
-
-    const now = Date.now();
-    if (now - lastClaimAt < 10_000) return false;
-
-    if (claimWindowOpenAt && claimWindowSecondsLeft <= 0) return false;
-
-    return true;
-  }, [status, winningCards, invalidStrikes, lastClaimAt, claimWindowOpenAt, claimWindowSecondsLeft]);
-
-  useEffect(() => {
-    if ((status === "LOCKED" || status === "PAUSED") && winningCards.length > 0 && claimWindowOpenAt == null) {
-      openClaimWindow();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, winningCards.length]);
 
   function openClaimWindow() {
     const openedAt = Date.now();
@@ -550,11 +535,13 @@ export default function PlayPage() {
   // Admin actions (MVP local)
   function adminNewGame() {
     setStatus("OPEN");
+    setCalledNumbers([]);
+    setSelectedCards([]);
+    setEnteredCards([]); // ✅ reset paid entries
     setEntriesLocked(false);
     setLastEntrySig("");
     setLastEntryTotalSol(0);
-    setCalledNumbers([]);
-    setSelectedCards([]);
+
     setWinners([]);
     setClaimResult(null);
     setInvalidStrikes(0);
@@ -563,33 +550,42 @@ export default function PlayPage() {
     closeClaimWindow();
   }
 
-  function adminStartCalling() {
-    if (status !== "OPEN") return;
+  function adminLockGameStart() {
     setStatus("LOCKED");
     setClaimResult(null);
-  }
-
-  function adminPause() {
-    if (status !== "LOCKED") return;
-    setStatus("PAUSED");
-    setClaimResult(null);
-  }
-
-  function adminResume() {
-    if (status !== "PAUSED") return;
-    setStatus("LOCKED");
-    setClaimResult(null);
-  }
-
-  function adminCloseGame() {
-    setStatus("ENDED");
-    setClaimResult(null);
+    setWinners([]);
+    setInvalidStrikes(0);
+    setLastClaimAt(0);
+    setClaimWindowOpenAt(null);
     closeClaimWindow();
   }
 
-  function adminNextGame() {
+  function adminPauseToggle() {
+    if (status === "LOCKED") setStatus("PAUSED");
+    else if (status === "PAUSED") setStatus("LOCKED");
+  }
+
+  function adminEndGame() {
+    setStatus("ENDED");
+    closeClaimWindow();
+  }
+
+  function adminCloseAndIncrement() {
     setGameNumber((n) => n + 1);
-    adminNewGame();
+    setStatus("CLOSED");
+    setCalledNumbers([]);
+    setSelectedCards([]);
+    setEnteredCards([]); // ✅ reset paid entries
+    setEntriesLocked(false);
+    setLastEntrySig("");
+    setLastEntryTotalSol(0);
+
+    setWinners([]);
+    setClaimResult(null);
+    setInvalidStrikes(0);
+    setLastClaimAt(0);
+    setClaimWindowOpenAt(null);
+    closeClaimWindow();
   }
 
   function adminCallNumber(n: number) {
@@ -611,7 +607,7 @@ export default function PlayPage() {
   // Player actions
   function toggleSelectCard(card: BingoCard) {
     if (status !== "OPEN") return;
-    if (entriesLocked) return;
+    if (entriesLocked) return; // ✅ can’t change after paying
 
     setSelectedCards((prev) => {
       const exists = prev.some((c) => c.id === card.id);
@@ -628,8 +624,9 @@ export default function PlayPage() {
       setClaimResult({ result: "REJECTED", message: "Connect your wallet first." });
       return;
     }
+
     if (!wallet.signTransaction) {
-      setClaimResult({ result: "REJECTED", message: "Your wallet does not support signTransaction." });
+      setClaimResult({ result: "REJECTED", message: "Wallet cannot sign transactions (signTransaction missing)." });
       return;
     }
 
@@ -643,56 +640,121 @@ export default function PlayPage() {
       return;
     }
 
-    if (!GAME_POT_WALLET) {
-      setClaimResult({ result: "REJECTED", message: "Missing NEXT_PUBLIC_GAME_POT_WALLET in env." });
+    const rpc = process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim();
+    const pot = process.env.NEXT_PUBLIC_GAME_POT_WALLET?.trim();
+
+    if (!rpc) {
+      setClaimResult({ result: "REJECTED", message: "Missing NEXT_PUBLIC_SOLANA_RPC_URL" });
+      return;
+    }
+    if (!pot) {
+      setClaimResult({ result: "REJECTED", message: "Missing NEXT_PUBLIC_GAME_POT_WALLET" });
       return;
     }
 
-    // MVP: one payment tx for all selected cards
-    const totalSol = entryFeeSol * selectedCards.length;
+    let potPk: PublicKey;
+    try {
+      potPk = new PublicKey(pot);
+    } catch {
+      setClaimResult({ result: "REJECTED", message: "NEXT_PUBLIC_GAME_POT_WALLET is not a valid public key." });
+      return;
+    }
+
+    const count = selectedCards.length;
+    const totalSol = entryFeeSol * count;
+
+    // Safety: don’t allow 0-fee entries
+    if (!(totalSol > 0)) {
+      setClaimResult({ result: "REJECTED", message: "Entry fee must be greater than 0." });
+      return;
+    }
+
     const lamports = Math.round(totalSol * 1_000_000_000);
 
-    try {
-      setClaiming(true);
-      setClaimResult(null);
+    setPaying(true);
+    setClaimResult(null);
 
-      const connection = new Connection(RPC_URL, "confirmed");
-      const pot = new PublicKey(GAME_POT_WALLET);
+    try {
+      const connection = new Connection(rpc, "confirmed");
 
       const tx = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: wallet.publicKey,
-          toPubkey: pot,
+          toPubkey: potPk,
           lamports,
         })
       );
-      tx.feePayer = wallet.publicKey;
 
-      const { blockhash } = await withRetries(() => connection.getLatestBlockhash("confirmed"), 6);
+      tx.feePayer = wallet.publicKey;
+      const { blockhash } = await connection.getLatestBlockhash("confirmed");
       tx.recentBlockhash = blockhash;
 
       const signed = await wallet.signTransaction(tx);
-      const sig = await withRetries(
-        () => connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, maxRetries: 6 }),
-        6
-      );
+      const sig = await connection.sendRawTransaction(signed.serialize(), {
+  skipPreflight: false,
+  maxRetries: 3,
+});
 
-      await withRetries(() => connection.confirmTransaction(sig, "confirmed"), 6);
+// ✅ Confirm without websockets (no signatureSubscribe)
+await confirmSignatureByPolling(connection, sig, 60_000);
 
+
+      // ✅ only now do we count them in pots
+      setEnteredCards(selectedCards);
       setEntriesLocked(true);
       setLastEntrySig(sig);
       setLastEntryTotalSol(totalSol);
 
       setClaimResult({
         result: "ACCEPTED",
-        message: `Payment confirmed. Entered ${selectedCards.length} card(s) for Game #${gameNumber}. Tx: ${sig}`,
+        message: `Payment confirmed. Entered ${count} card(s) for Game #${gameNumber}. Tx: ${sig}`,
       });
     } catch (e: any) {
-      setClaimResult({ result: "REJECTED", message: e?.message ?? "Payment failed" });
+      setClaimResult({
+        result: "REJECTED",
+        message: e?.message ? `Payment failed: ${e.message}` : "Payment failed.",
+      });
     } finally {
-      setClaiming(false);
+      setPaying(false);
     }
   }
+
+  // Derived: use PAID entries for pots
+  const entriesCount = enteredCards.length;
+  const totalPot = entriesCount * entryFeeSol;
+
+  const playerSeriesPot = totalPot * 0.75;
+  const foundersBonus = totalPot * 0.05;
+  const foundersSeriesPot = playerSeriesPot + foundersBonus; // 80%
+  const jackpotPot = totalPot * 0.05;
+
+  // Derived: winning cards (use paid entries once locked; fallback to selected for admin testing)
+  const activeEntries = entriesLocked ? enteredCards : selectedCards;
+
+  const winningCards = useMemo(() => {
+    if (status !== "LOCKED" && status !== "PAUSED") return [];
+    return activeEntries.filter((c) => isWinningByType(gameType, c.grid, calledSet));
+  }, [activeEntries, calledSet, status, gameType]);
+
+  const canClaimBingo = useMemo(() => {
+    if (status !== "LOCKED" && status !== "PAUSED") return false;
+    if (winningCards.length === 0) return false;
+    if (invalidStrikes >= 3) return false;
+
+    const now = Date.now();
+    if (now - lastClaimAt < 10_000) return false;
+
+    if (claimWindowOpenAt && claimWindowSecondsLeft <= 0) return false;
+
+    return true;
+  }, [status, winningCards, invalidStrikes, lastClaimAt, claimWindowOpenAt, claimWindowSecondsLeft]);
+
+  useEffect(() => {
+    if ((status === "LOCKED" || status === "PAUSED") && winningCards.length > 0 && claimWindowOpenAt == null) {
+      openClaimWindow();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, winningCards.length]);
 
   async function handleCallBingo() {
     if (!canClaimBingo) return;
@@ -711,138 +773,105 @@ export default function PlayPage() {
     }
 
     const claimedCard = eligible[0];
-    const isFounders = claimedCard.type === "FOUNDERS" || claimedCard.type === "VIP";
-
-    // TODO (backend):
-    // POST /api/game/claim with gameNumber, walletAddress, cardId, gameType
+    const isFounders = claimedCard.type === "FOUNDERS";
 
     setWinners((prev) => [...prev, { cardId: claimedCard.id, wallet: walletAddress, isFounders }]);
-
     setClaimResult({
       result: "ACCEPTED",
-      message: `Bingo claim accepted (MVP local). Card=${claimedCard.label}`,
+      message: `BINGO accepted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}). (MVP local)`,
     });
 
     setClaiming(false);
   }
 
-  // Simple admin auth (kept from your page)
-  const [adminPassword, setAdminPassword] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
-  const adminGate = process.env.NEXT_PUBLIC_NFTBINGO_ADMIN_PASSWORD || ""; // optional; if blank, uses local password field only
+  // Payout preview (fair model)
+  const payoutPreview = useMemo(() => {
+    const totalWinners = winners.length;
+    if (totalWinners === 0) return null;
 
-  function handleAdminLogin() {
-    if (!adminGate) {
-      // if no env set, allow any non-empty password locally for MVP
-      if (adminPassword.trim().length > 0) setIsAdmin(true);
-      return;
-    }
-    if (adminPassword.trim() === adminGate.trim()) setIsAdmin(true);
-  }
+    const foundersWinners = winners.filter((w) => w.isFounders).length;
+    const perWinnerBase = totalWinners > 0 ? playerSeriesPot / totalWinners : 0;
+
+    const perFounderBonus =
+      foundersWinners > 0
+        ? foundersBonus / foundersWinners // split founders 5% across founders winners
+        : 0;
+
+    return {
+      totalWinners,
+      foundersWinners,
+      perWinnerBase,
+      perFounderBonus,
+    };
+  }, [winners, playerSeriesPot, foundersBonus]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      {/* Header */}
-      <div className="max-w-6xl mx-auto px-4 md:px-6 pt-10 pb-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <main className="min-h-screen bg-slate-50">
+      <div className="max-w-6xl mx-auto px-4 py-10">
+        <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="text-4xl font-extrabold text-slate-900">NFTBingo — Play</h1>
-            <p className="text-slate-600 mt-1">
-              Game #{gameNumber} •{" "}
-              <span className="font-semibold text-slate-900">
-                {gameType === "STANDARD" ? "Standard" : gameType === "FOUR_CORNERS" ? "4 Corners" : "Blackout"}
-              </span>
-              {" • "}
-              Status: <span className="font-semibold text-slate-900">{status}</span>
-            </p>
+            <div className="text-sm text-slate-600 mt-1">
+              Game #{gameNumber} • <span className="font-semibold">{gameTypeLabel(gameType)}</span> • Status:{" "}
+              <span className="font-semibold">{status}</span>
+            </div>
           </div>
 
-          {!isAdmin && (
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 w-full md:w-[360px]">
-              <div className="text-sm font-semibold text-slate-900 mb-2">Admin</div>
-              <div className="flex items-center gap-2">
-                <input
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  type="password"
-                  placeholder="Password"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-pink-300"
-                />
-                <button
-                  type="button"
-                  onClick={handleAdminLogin}
-                  className="bg-slate-900 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:opacity-95"
-                >
-                  Login
-                </button>
-              </div>
-              <div className="text-xs text-slate-500 mt-2">
-                Admin panel is hidden unless logged in.
-              </div>
-            </div>
-          )}
-
-          {isAdmin && (
-            <div className="flex items-center gap-3">
-              <span className="text-xs px-3 py-1 rounded-full bg-slate-900 text-white">ADMIN</span>
-            </div>
-          )}
+          {isAdmin ? (
+            <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-900 text-white">ADMIN</span>
+          ) : null}
         </div>
 
-        {/* Pots (no sublabels) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        {/* Pots */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <PotCard title="Player Series Pot" value={`${formatSol(playerSeriesPot)} SOL`} />
           <PotCard title="Founders Series Pot" value={`${formatSol(foundersSeriesPot)} SOL`} />
           <PotCard title="Progressive Jackpot" value={`${formatSol(jackpotPot)} SOL`} />
         </div>
 
-        {/* Main content grid */}
-        <div className={isAdmin ? "grid grid-cols-1 lg:grid-cols-3 gap-6" : "grid grid-cols-1 gap-6"}>
-          {/* Left: Player actions */}
-          <div className={isAdmin ? "lg:col-span-2 bg-white rounded-2xl shadow p-6 md:p-8" : "bg-white rounded-2xl shadow p-6 md:p-8"}>
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">Join & Play</h2>
-                <p className="text-slate-700">Entry fee is set by the admin per game. You can enter up to {maxCards} cards.</p>
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+          {/* Left main */}
+          <div className="md:col-span-2 bg-white rounded-2xl shadow p-6 md:p-8">
+            <h2 className="text-2xl font-bold text-slate-900">Join & Play</h2>
+            <p className="text-slate-700 mt-1">
+              Entry fee is set by the admin per game. You can enter up to {maxCards} cards.
+            </p>
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">Wallet:</span>
-                <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2 py-1 rounded-lg">
-                  {walletAddress || "Not connected"}
-                </span>
-              </div>
-            </div>
-
-            {/* Entry fee display */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 flex items-center justify-between">
               <div>
                 <div className="text-sm text-slate-600">Entry Fee (per card)</div>
                 <div className="text-xl font-extrabold text-slate-900">{formatSol(entryFeeSol)} SOL</div>
               </div>
+
               <div className="text-sm text-slate-600">
-                Selected entries: <span className="font-semibold text-slate-900">{entriesCount}</span>{" "}
-                {entriesCount > 0 ? `(pay ${formatSol(entriesCount * entryFeeSol)} SOL)` : ""}
+                Selected entries: <span className="font-semibold text-slate-900">{selectedCards.length}</span>
+                <div className="text-xs text-slate-500 mt-1">
+                  Paid entries: <span className="font-semibold text-slate-900">{enteredCards.length}</span>
+                  {entriesLocked ? " (locked)" : ""}
+                </div>
               </div>
             </div>
 
-            {/* Card selection */}
-            <div className="mb-6">
+            <div className="mt-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Select your card(s)</h3>
-              <p className="text-sm text-slate-600 mb-4">
-                Cards load from your connected wallet (Founders / Players / VIP). If your wallet is not connected, demo cards are shown.
+              <p className="text-sm text-slate-600">
+                Cards load from your connected wallet (Founders / Players). If your wallet is not connected, demo cards
+                are shown.
               </p>
 
               {cardsLoading ? (
-                <div className="mb-3 text-sm text-slate-600">Loading your cards…</div>
+                <div className="mt-4 text-sm text-slate-600">Loading your cards…</div>
               ) : cardsError ? (
-                <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{cardsError}</div>
+                <div className="mt-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  {cardsError}
+                </div>
               ) : null}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {walletCards.map((card) => {
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {(wallet.connected && walletCards.length ? walletCards : walletCards).map((card) => {
                   const selected = selectedCards.some((c) => c.id === card.id);
-                  const disabled = status !== "OPEN" || entriesLocked || (!selected && selectedCards.length >= maxCards);
+                  const disabled = status !== "OPEN" || entriesLocked;
+
                   return (
                     <button
                       key={card.id}
@@ -850,26 +879,18 @@ export default function PlayPage() {
                       onClick={() => toggleSelectCard(card)}
                       disabled={disabled}
                       className={[
-                        "text-left border rounded-xl p-4 transition-all",
+                        "w-full text-left rounded-xl border p-4 transition",
                         selected ? "border-pink-500 bg-pink-50" : "border-slate-200 bg-white hover:bg-slate-50",
-                        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
+                        disabled ? "opacity-60 cursor-not-allowed" : "",
                       ].join(" ")}
                     >
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center justify-between">
                         <div>
                           <div className="font-semibold text-slate-900">{card.label}</div>
                           <div className="text-xs text-slate-600 mt-1">
                             Type:{" "}
-                            <span
-                              className={
-                                card.type === "FOUNDERS"
-                                  ? "text-indigo-700 font-semibold"
-                                  : card.type === "VIP"
-                                    ? "text-amber-700 font-semibold"
-                                    : "text-slate-700 font-semibold"
-                              }
-                            >
-                              {card.type === "FOUNDERS" ? "Founders Series" : card.type === "VIP" ? "VIP Series" : "Player Series"}
+                            <span className={card.type === "FOUNDERS" ? "text-indigo-700 font-semibold" : "text-slate-700 font-semibold"}>
+                              {card.type === "FOUNDERS" ? "Founders Series" : "Player Series"}
                             </span>
                           </div>
                         </div>
@@ -889,27 +910,27 @@ export default function PlayPage() {
             </div>
 
             {/* Pay + enter */}
-            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-8">
+            <div className="flex flex-col md:flex-row md:items-center gap-3 mt-6 mb-8">
               <button
                 type="button"
                 onClick={handlePayAndLockEntries}
-                disabled={status !== "OPEN" || selectedCards.length === 0 || entriesLocked || claiming}
+                disabled={status !== "OPEN" || selectedCards.length === 0 || entriesLocked || paying}
                 className={[
                   "cursor-pointer bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-6 py-3 rounded-xl shadow-md transition-all",
                   "hover:opacity-95 hover:shadow-lg active:scale-[0.99]",
-                  status !== "OPEN" || selectedCards.length === 0 || entriesLocked || claiming ? "opacity-50 cursor-not-allowed" : "",
+                  status !== "OPEN" || selectedCards.length === 0 || entriesLocked || paying ? "opacity-50 cursor-not-allowed" : "",
                 ].join(" ")}
               >
-                {claiming ? "Processing…" : "Pay & Enter Game"}
+                {paying ? "Paying…" : entriesLocked ? "Entered (Locked)" : "Pay & Enter Game"}
               </button>
 
               <div className="text-sm text-slate-600">
                 Status must be <span className="font-semibold text-slate-900">OPEN</span> to enter.
-                {entriesLocked && lastEntryTotalSol > 0 ? (
-                  <div className="mt-1 text-xs text-slate-500">Paid {formatSol(lastEntryTotalSol)} SOL for this game.</div>
-                ) : null}
-                {entriesLocked && lastEntrySig ? (
-                  <div className="mt-1 text-xs text-slate-500 break-all">Tx: {lastEntrySig}</div>
+                {lastEntrySig ? (
+                  <div className="text-xs text-slate-500 mt-1">
+                    Last entry: {formatSol(lastEntryTotalSol)} SOL • Tx:{" "}
+                    <span className="font-mono">{lastEntrySig}</span>
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -921,12 +942,12 @@ export default function PlayPage() {
                 <h3 className="text-lg font-semibold text-slate-900 mb-2">Your card view</h3>
                 <p className="text-sm text-slate-600 mb-4">Numbers auto-mark as they’re called. Free space is always marked.</p>
 
-                {selectedCards.length === 0 ? (
+                {activeEntries.length === 0 ? (
                   <div className="border border-dashed border-slate-300 rounded-xl p-6 text-slate-600 bg-slate-50">
                     Select card(s) above to see your grid here.
                   </div>
                 ) : (
-                  <CardCarousel cards={selectedCards} calledSet={calledSet} gameType={gameType} />
+                  <CardCarousel cards={activeEntries} calledSet={calledSet} gameType={gameType} />
                 )}
               </div>
 
@@ -959,202 +980,252 @@ export default function PlayPage() {
                   </div>
 
                   {/* Claim window */}
-                  {claimWindowOpenAt && (status === "LOCKED" || status === "PAUSED") ? (
-                    <div className="mt-4 border border-amber-200 bg-amber-50 rounded-xl p-3">
-                      <div className="text-sm font-semibold text-amber-900">Claim window</div>
-                      <div className="text-sm text-amber-800">
-                        {claimWindowSecondsLeft > 0 ? (
-                          <>
-                            You have <span className="font-semibold">{claimWindowSecondsLeft}s</span> to claim before the next number is called.
-                          </>
-                        ) : (
-                          <>Claim window closed.</>
-                        )}
-                      </div>
+                  <div className="mt-4 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Claim window</span>
+                      <span className="font-semibold text-slate-900">
+                        {claimWindowOpenAt ? `${claimWindowSecondsLeft}s` : "—"}
+                      </span>
                     </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
+                    <div className="text-xs text-slate-500 mt-1">Closes on next called number or 60s.</div>
+                  </div>
 
-            {/* Call Bingo */}
-            <div className="mt-8">
-              <button
-                type="button"
-                onClick={handleCallBingo}
-                disabled={!canClaimBingo || claiming}
-                className={[
-                  "w-full md:w-auto bg-slate-900 text-white font-semibold px-6 py-3 rounded-xl shadow transition",
-                  canClaimBingo ? "hover:opacity-95" : "opacity-40 cursor-not-allowed",
-                ].join(" ")}
-              >
-                {claiming ? "Submitting…" : "CALL BINGO"}
-              </button>
+                  {/* Claim button */}
+                  <div className="mt-5">
+                    <button
+                      type="button"
+                      onClick={handleCallBingo}
+                      disabled={!canClaimBingo || claiming}
+                      className={[
+                        "w-full cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-6 py-3 rounded-xl shadow-md transition-all",
+                        "hover:opacity-95 hover:shadow-lg active:scale-[0.99]",
+                        !canClaimBingo || claiming ? "opacity-50 cursor-not-allowed" : "",
+                      ].join(" ")}
+                    >
+                      {winningCards.length > 0 ? "CALL BINGO" : "CALL BINGO (locked)"}
+                    </button>
 
-              {invalidStrikes > 0 ? (
-                <div className="text-xs text-rose-700 mt-2">
-                  Invalid strikes: <span className="font-semibold">{invalidStrikes}</span> (3 strikes disables claims)
-                </div>
-              ) : null}
+                    <div className="mt-2 text-xs text-slate-500">
+                      Invalid strikes: <span className="font-semibold text-slate-900">{invalidStrikes}</span>/3 • Cooldown: 10s
+                    </div>
+                  </div>
 
-              {claimResult ? (
-                <div
-                  className={[
-                    "mt-3 rounded-xl p-3 text-sm border",
-                    claimResult.result === "ACCEPTED"
-                      ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-                      : "bg-rose-50 border-rose-200 text-rose-900",
-                  ].join(" ")}
-                >
-                  {claimResult.message}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          {/* Right: Admin panel (unchanged structure, uses your existing actions) */}
-          {isAdmin && (
-            <div className="bg-white rounded-2xl shadow p-6 md:p-8 border border-slate-100">
-              <h2 className="text-xl font-bold text-slate-900 mb-4">Admin Controls</h2>
-
-              {/* Game type */}
-              <div className="mb-4">
-                <div className="text-sm text-slate-600 mb-2">Game type</div>
-                <div className="flex flex-wrap gap-2">
-                  <Pill label="Standard" active={gameType === "STANDARD"} onClick={() => setGameType("STANDARD")} />
-                  <Pill label="4 Corners" active={gameType === "FOUR_CORNERS"} onClick={() => setGameType("FOUR_CORNERS")} />
-                  <Pill label="Blackout" active={gameType === "BLACKOUT"} onClick={() => setGameType("BLACKOUT")} />
-                </div>
-              </div>
-
-              {/* Entry fee */}
-              <div className="mb-6">
-                <div className="text-sm text-slate-600 mb-2">Entry fee (SOL per card)</div>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={entryFeeSol}
-                  onChange={(e) => setEntryFeeSol(Math.max(0, Number(e.target.value)))}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-pink-300"
-                />
-              </div>
-
-              {/* Game controls */}
-              <div className="grid grid-cols-2 gap-2 mb-6">
-                <button
-                  type="button"
-                  onClick={adminNewGame}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-900 font-semibold px-3 py-2 rounded-xl"
-                >
-                  New Game (Open)
-                </button>
-                <button
-                  type="button"
-                  onClick={adminStartCalling}
-                  className="bg-indigo-600 hover:opacity-95 text-white font-semibold px-3 py-2 rounded-xl"
-                >
-                  Lock & Start
-                </button>
-
-                <button
-                  type="button"
-                  onClick={adminPause}
-                  className="bg-amber-500 hover:opacity-95 text-white font-semibold px-3 py-2 rounded-xl"
-                >
-                  Pause
-                </button>
-                <button
-                  type="button"
-                  onClick={adminResume}
-                  className="bg-emerald-600 hover:opacity-95 text-white font-semibold px-3 py-2 rounded-xl"
-                >
-                  Resume
-                </button>
-
-                <button
-                  type="button"
-                  onClick={adminCloseGame}
-                  className="bg-slate-900 hover:opacity-95 text-white font-semibold px-3 py-2 rounded-xl"
-                >
-                  End Game
-                </button>
-                <button
-                  type="button"
-                  onClick={adminNextGame}
-                  className="bg-pink-600 hover:opacity-95 text-white font-semibold px-3 py-2 rounded-xl"
-                >
-                  Next Game #
-                </button>
-              </div>
-
-              {/* Mirror-click controls */}
-              <div className="mb-4">
-                <div className="text-sm text-slate-600 mb-2">Mirror-click called number</div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={75}
-                    placeholder="1–75"
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      const v = Number((e.target as HTMLInputElement).value);
-                      if (!Number.isFinite(v)) return;
-                      const n = clamp(Math.floor(v), 1, 75);
-                      (e.target as HTMLInputElement).value = "";
-                      adminCallNumber(n);
-                    }}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-pink-300"
-                  />
-                  <button
-                    type="button"
-                    onClick={adminUndo}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-900 font-semibold px-3 py-2 rounded-xl whitespace-nowrap"
-                  >
-                    Undo
-                  </button>
-                </div>
-                <div className="text-xs text-slate-500 mt-2">
-                  Tip: type the called number and press Enter.
-                </div>
-              </div>
-
-              {/* Winners list */}
-              <div className="mt-6">
-                <div className="text-sm font-semibold text-slate-900 mb-2">Winners (local MVP)</div>
-                <div className="border border-slate-200 rounded-xl bg-slate-50 p-3 text-sm max-h-48 overflow-auto">
-                  {winners.length === 0 ? (
-                    <div className="text-slate-500">No winners yet.</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {winners.map((w, i) => (
-                        <div key={`${w.cardId}-${i}`} className="bg-white border border-slate-200 rounded-lg p-2">
-                          <div className="text-xs text-slate-600">
-                            Card: <span className="font-mono">{w.cardId}</span>
-                          </div>
-                          <div className="text-xs text-slate-600">
-                            Wallet: <span className="font-mono">{w.wallet || "(unknown)"}</span>
-                          </div>
-                          <div className="text-xs">
-                            Payout tier:{" "}
-                            <span className={w.isFounders ? "text-indigo-700 font-semibold" : "text-slate-700 font-semibold"}>
-                              {w.isFounders ? "Founders/VIP bonus" : "Standard"}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                  {/* Result */}
+                  {claimResult && (
+                    <div
+                      className={[
+                        "mt-4 rounded-xl p-3 text-sm border",
+                        claimResult.result === "ACCEPTED"
+                          ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                          : "bg-rose-50 border-rose-200 text-rose-900",
+                      ].join(" ")}
+                    >
+                      {claimResult.message}
                     </div>
                   )}
                 </div>
-                <div className="text-xs text-slate-500 mt-2">
-                  Tomorrow MVP: payouts are manual. This list helps you audit.
+              </div>
+            </div>
+
+            {/* Winners */}
+            <div className="mt-8 border-t border-slate-200 pt-6">
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">Winners (local MVP)</h3>
+              {winners.length === 0 ? (
+                <p className="text-sm text-slate-600">No winners recorded yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="text-sm text-slate-700">
+                    Winners recorded: <span className="font-semibold text-slate-900">{winners.length}</span>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-col gap-2">
+                      {winners.map((w, idx) => (
+                        <div key={`${w.cardId}-${idx}`} className="flex items-center justify-between text-sm">
+                          <span className="text-slate-800">
+                            {w.isFounders ? "⭐ Founders" : "🎫 Player"} — {w.cardId}
+                          </span>
+                          <span className="text-xs text-slate-500">{w.wallet}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {payoutPreview && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+                      <div className="font-semibold text-slate-900 mb-2">Payout preview (fair model)</div>
+                      <div className="text-slate-700">
+                        Each winner base share:{" "}
+                        <span className="font-semibold text-slate-900">{formatSol(payoutPreview.perWinnerBase)} SOL</span>
+                      </div>
+                      <div className="text-slate-700 mt-1">
+                        Founders winners:{" "}
+                        <span className="font-semibold text-slate-900">{payoutPreview.foundersWinners}</span>{" "}
+                        {payoutPreview.foundersWinners > 0 ? (
+                          <>
+                            • Each founders bonus:{" "}
+                            <span className="font-semibold text-slate-900">{formatSol(payoutPreview.perFounderBonus)} SOL</span>
+                          </>
+                        ) : (
+                          <>• No founders bonus paid</>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Admin panel (ADMIN ONLY) */}
+          {isAdmin ? (
+            <div className="bg-white rounded-2xl shadow p-6 md:p-8">
+              <h2 className="text-2xl font-bold text-slate-900">Controls</h2>
+              <p className="text-slate-700 mt-1">Admin controls (mirror-click numbers + manage the game).</p>
+
+              <div className="mt-6 space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm text-slate-600">Entry Fee (SOL)</div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={entryFeeSol}
+                      disabled={status === "LOCKED" || status === "PAUSED"}
+                      onChange={(e) => setEntryFeeSol(clamp(parseFloat(e.target.value || "0"), 0, 100))}
+                      className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
+                    />
+                    <span className="text-sm text-slate-600">per card</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-2">Locked once the game starts (LOCKED/PAUSED).</div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm text-slate-600">Game Type</div>
+                  <select
+                    value={gameType}
+                    disabled={status === "LOCKED" || status === "PAUSED"}
+                    onChange={(e) => setGameType(e.target.value as GameType)}
+                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
+                  >
+                    <option value="STANDARD">Standard</option>
+                    <option value="FOUR_CORNERS">4 Corners</option>
+                    <option value="BLACKOUT">Blackout</option>
+                  </select>
+                  <div className="text-xs text-slate-500 mt-2">Locked once the game starts (LOCKED/PAUSED).</div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={adminNewGame}
+                    className="cursor-pointer bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow-md transition-all hover:opacity-95"
+                  >
+                    Open Game (signups)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={adminLockGameStart}
+                    disabled={status !== "OPEN"}
+                    className={[
+                      "cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow-md transition-all hover:opacity-95",
+                      status !== "OPEN" ? "opacity-50 cursor-not-allowed" : "",
+                    ].join(" ")}
+                  >
+                    Lock & Start Game
+                  </button>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={adminPauseToggle}
+                      disabled={status !== "LOCKED" && status !== "PAUSED"}
+                      className={[
+                        "flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-900 hover:bg-slate-50",
+                        status !== "LOCKED" && status !== "PAUSED" ? "opacity-50 cursor-not-allowed" : "",
+                      ].join(" ")}
+                    >
+                      {status === "PAUSED" ? "Resume" : "Pause"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={adminEndGame}
+                      disabled={status !== "LOCKED" && status !== "PAUSED"}
+                      className={[
+                        "flex-1 rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 font-semibold text-rose-800 hover:bg-rose-100",
+                        status !== "LOCKED" && status !== "PAUSED" ? "opacity-50 cursor-not-allowed" : "",
+                      ].join(" ")}
+                    >
+                      End Game
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={adminCloseAndIncrement}
+                    disabled={status !== "ENDED"}
+                    className={[
+                      "rounded-xl border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-900 hover:bg-slate-50",
+                      status !== "ENDED" ? "opacity-50 cursor-not-allowed" : "",
+                    ].join(" ")}
+                  >
+                    Close & Next Game (+1)
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-8 border-t border-slate-200 pt-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-semibold text-slate-900">Mirror-click calls</h3>
+                  <button
+                    type="button"
+                    onClick={adminUndo}
+                    disabled={(status !== "LOCKED" && status !== "PAUSED") || calledNumbers.length === 0}
+                    className={[
+                      "rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-900 hover:bg-slate-50",
+                      (status !== "LOCKED" && status !== "PAUSED") || calledNumbers.length === 0
+                        ? "opacity-50 cursor-not-allowed"
+                        : "",
+                    ].join(" ")}
+                  >
+                    Undo last
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-10 gap-2">
+                  {Array.from({ length: 75 }, (_, i) => i + 1).map((n) => {
+                    const picked = calledSet.has(n);
+                    const disabled = (status !== "LOCKED" && status !== "PAUSED") || picked;
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => adminCallNumber(n)}
+                        disabled={disabled}
+                        className={[
+                          "rounded-lg px-2 py-2 text-xs font-semibold border transition-all",
+                          picked
+                            ? "bg-slate-900 text-white border-slate-900"
+                            : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50",
+                          disabled && !picked ? "opacity-40 cursor-not-allowed" : "",
+                        ].join(" ")}
+                      >
+                        {n}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
-          )}
+          ) : null}
+        </div>
+
+        <div className="mt-10 text-xs text-slate-500">
+          MVP note: Pots only increase after “Pay & Enter” confirms on-chain. Next step is wiring backend entry records + payouts.
         </div>
       </div>
-    </div>
+    </main>
   );
 }
