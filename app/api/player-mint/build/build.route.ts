@@ -217,10 +217,18 @@ export async function POST(req: Request) {
       })
     );
 
+    // IMPORTANT (Phantom Lighthouse): wallet signs FIRST.
+    // So we build an unsigned tx that *requires* the wallet signature (fee payer),
+    // then the client signs it, and the server adds the remaining required
+    // signatures (mint signer + update authority) in /submit.
     builder.setFeePayer(userNoopSigner);
 
-    // IMPORTANT: Build an unsigned tx. Phantom/Lighthouse expects the wallet to sign first,
-    // then the server adds the remaining required signatures (mint + update authority) before sending.
+    // IMPORTANT: blockhash is required or Umi will throw.
+    // (This is the error you're seeing: "Setting a blockhash is required...")
+    const latest = await umi.rpc.getLatestBlockhash();
+builder.setBlockhash(latest.blockhash);
+
+
     const unsignedTx = await builder.build(umi);
     const txBytes = umi.transactions.serialize(unsignedTx);
     const txBase64 = Buffer.from(txBytes).toString("base64");
@@ -238,7 +246,7 @@ export async function POST(req: Request) {
           imageUri,
           metadataUri,
           txBase64,
-          mintSecretKeyB64: Buffer.from(mintSigner.secretKey).toString("base64"),
+          mintSecretKeyB64: Buffer.from((mintSigner as any).secretKey as Uint8Array).toString("base64"),
         },
       ],
     };
