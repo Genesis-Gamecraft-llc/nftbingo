@@ -5,8 +5,8 @@ import { NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 
 import {
-  createNoopSigner,
   createGenericFile,
+  createNoopSigner,
   generateSigner,
   percentAmount,
   publicKey,
@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
 type BuildRequest = {
   buildId: string;
   wallet: string;
-  items: Array<{ index: number }>; // client only sends indexes; server generates/uploads
+  items: Array<{ index: number }>;
 };
 
 type PlayerInitRecord = {
@@ -57,7 +57,8 @@ type AttemptRecord = {
     mint: string;
     imageUri: string;
     metadataUri: string;
-    txBase64: string; // server-partially-signed tx (mint signer, collection verify)
+    txBase64: string;
+    mintSecretKeyB64: string;
   }>;
 };
 
@@ -86,7 +87,6 @@ function bingoByLetter(numbers: number[]) {
     numbers[c + 15],
     numbers[c + 20],
   ];
-
   return {
     B: col(0),
     I: col(1),
@@ -141,10 +141,8 @@ export async function POST(req: Request) {
     if (!buildId || !wallet) {
       return NextResponse.json({ ok: false, error: "Missing buildId or wallet" }, { status: 400 });
     }
-
-    // still enforce 1..5 for safety, even though init locks to 1
-    if (items.length < 1 || items.length > 5) {
-      return NextResponse.json({ ok: false, error: "items must be 1..5" }, { status: 400 });
+    if (items.length !== 1) {
+      return NextResponse.json({ ok: false, error: "Player Series build supports exactly 1 item." }, { status: 400 });
     }
 
     const init = (await kv.get<PlayerInitRecord>(buildKey(buildId))) ?? null;
@@ -152,123 +150,97 @@ export async function POST(req: Request) {
     if (init.wallet !== wallet) return NextResponse.json({ ok: false, error: "Wallet mismatch" }, { status: 403 });
     if (Date.now() > init.expiresAt) return NextResponse.json({ ok: false, error: "Build expired" }, { status: 410 });
 
-    const byIndex = new Map(init.items.map((x) => [x.index, x]));
-
-    // Validate indexes exist and are unique
-    const seen = new Set<number>();
-    for (const it of items) {
-      const idx = Number(it.index);
-      if (!Number.isFinite(idx)) {
-        return NextResponse.json({ ok: false, error: "Invalid index" }, { status: 400 });
-      }
-      if (seen.has(idx)) {
-        return NextResponse.json({ ok: false, error: `Duplicate index ${idx}` }, { status: 400 });
-      }
-      seen.add(idx);
-      if (!byIndex.get(idx)) {
-        return NextResponse.json({ ok: false, error: `Invalid index ${idx}` }, { status: 400 });
-      }
-    }
+    const idx = Number(items[0]?.index);
+    const expected = init.items.find((x) => x.index === idx);
+    if (!expected) return NextResponse.json({ ok: false, error: `Invalid index ${idx}` }, { status: 400 });
 
     const umi = getUmiPlayerServer();
 
-    const collectionMintStr = assertEnv("PLAYER_SERIES_COLLECTION_MINT");
-    const collectionMintPk = publicKey(collectionMintStr);
-
+    const collectionMintPk = publicKey(assertEnv("PLAYER_SERIES_COLLECTION_MINT"));
     const ownerPk = publicKey(wallet);
     const userNoopSigner = createNoopSigner(ownerPk);
 
     const attemptId = crypto.randomUUID();
-    const mints: AttemptRecord["mints"] = [];
-
     const seriesFolder = getSeriesFolder();
 
-    // ✅ Build ONE tx per mint to avoid tx-size failures
-    for (const it of items) {
-      const idx = Number(it.index);
-      const expected = byIndex.get(idx)!;
+    // 1) Generate PNG server-side
+    const pngBytes = await generateCardImage(expected.numbers, expected.backgroundId, { seriesFolder });
 
-      // 1) Generate image server-side
-      const pngBytes = await generateCardImage(expected.numbers, expected.backgroundId, { seriesFolder });
+    // 2) Upload PNG to Irys (server pays)
+    const imageFile = createGenericFile(pngBytes, `player-${expected.serialStr}.png`, { contentType: "image/png" });
+    const [imageUri] = await umi.uploader.upload([imageFile]);
 
-      // 2) Upload image to Irys (server pays)
-      const imageFile = createGenericFile(pngBytes, `player-${expected.serialStr}.png`, {
-        contentType: "image/png",
-      });
-      const [imageUri] = await umi.uploader.upload([imageFile]);
+    // 3) Upload metadata JSON to Irys (server pays)
+    const md = buildPlayerMetadata({
+      serialStr: expected.serialStr,
+      backgroundId: expected.backgroundId,
+      numbers: expected.numbers,
+      imageUri,
+    });
 
-      // 3) Upload metadata to Irys (server pays)
-      const md = buildPlayerMetadata({
-        serialStr: expected.serialStr,
-        backgroundId: expected.backgroundId,
-        numbers: expected.numbers,
-        imageUri,
-      });
+    const mdBytes = new TextEncoder().encode(JSON.stringify(md));
+    const mdFile = createGenericFile(mdBytes, `player-${expected.serialStr}.json`, { contentType: "application/json" });
+    const [metadataUri] = await umi.uploader.upload([mdFile]);
 
-      const mdBytes = new TextEncoder().encode(JSON.stringify(md));
-      const mdFile = createGenericFile(mdBytes, `player-${expected.serialStr}.json`, {
-        contentType: "application/json",
-      });
-      const [metadataUri] = await umi.uploader.upload([mdFile]);
+    // 4) Build mint tx (user pays Solana fees; server signs mint+collection authority)
+    const mintSigner = generateSigner(umi);
+    const name = `Player Series #${expected.serialStr}`;
+    const symbol = process.env.PLAYER_SERIES_SYMBOL?.trim() || "NFTBingo";
 
-      // 4) Build mint tx (user pays Solana fees)
-      const mintSigner = generateSigner(umi);
-      const name = `Player Series #${expected.serialStr}`;
-      const symbol = process.env.PLAYER_SERIES_SYMBOL?.trim() || "NFTBingo";
+    let builder = transactionBuilder();
 
-      let builder = transactionBuilder();
+    builder = builder.add(
+      createNft(umi, {
+        payer: userNoopSigner,          // user fee payer
+        mint: mintSigner,              // server mint signer
+        authority: umi.identity,        // server update authority
+        name,
+        symbol,
+        uri: metadataUri,
+        sellerFeeBasisPoints: percentAmount(0, 2),
+        tokenOwner: ownerPk,
+        collection: { key: collectionMintPk, verified: false },
+      })
+    );
 
-      builder = builder.add(
-        createNft(umi, {
-          payer: userNoopSigner,
-          mint: mintSigner,
-          authority: umi.identity,
-          name,
-          symbol,
-          uri: metadataUri,
-          sellerFeeBasisPoints: percentAmount(0, 2),
-          tokenOwner: ownerPk,
-          collection: { key: collectionMintPk, verified: false },
-        })
-      );
+    const metadataPda = findMetadataPda(umi, { mint: mintSigner.publicKey });
+    const collectionMetadataPda = findMetadataPda(umi, { mint: collectionMintPk });
+    const collectionMasterEditionPda = findMasterEditionPda(umi, { mint: collectionMintPk });
 
-      const metadataPda = findMetadataPda(umi, { mint: mintSigner.publicKey });
-      const collectionMetadataPda = findMetadataPda(umi, { mint: collectionMintPk });
-      const collectionMasterEditionPda = findMasterEditionPda(umi, { mint: collectionMintPk });
+    builder = builder.add(
+      verifyCollectionV1(umi, {
+        metadata: metadataPda,
+        collectionMint: collectionMintPk,
+        authority: umi.identity,
+        collectionMetadata: collectionMetadataPda,
+        collectionMasterEdition: collectionMasterEditionPda,
+      })
+    );
 
-      builder = builder.add(
-        verifyCollectionV1(umi, {
-          metadata: metadataPda,
-          collectionMint: collectionMintPk,
-          authority: umi.identity,
-          collectionMetadata: collectionMetadataPda,
-          collectionMasterEdition: collectionMasterEditionPda,
-        })
-      );
+    builder.setFeePayer(userNoopSigner);
 
-      builder.setFeePayer(userNoopSigner);
-
-      // server signs with mintSigner + collection authority; user still must sign as fee payer
-      const signedByServer = await builder.buildAndSign(umi);
-      const txBytes = umi.transactions.serialize(signedByServer);
-      const txBase64 = Buffer.from(txBytes).toString("base64");
-
-      mints.push({
-        index: idx,
-        serialStr: expected.serialStr,
-        mint: mintSigner.publicKey.toString(),
-        imageUri,
-        metadataUri,
-        txBase64,
-      });
-    }
+    // IMPORTANT: Build an unsigned tx. Phantom/Lighthouse expects the wallet to sign first,
+    // then the server adds the remaining required signatures (mint + update authority) before sending.
+    const unsignedTx = await builder.build(umi);
+    const txBytes = umi.transactions.serialize(unsignedTx);
+    const txBase64 = Buffer.from(txBytes).toString("base64");
 
     const attempt: AttemptRecord = {
       attemptId,
       buildId,
       wallet,
       createdAt: Date.now(),
-      mints,
+      mints: [
+        {
+          index: idx,
+          serialStr: expected.serialStr,
+          mint: mintSigner.publicKey.toString(),
+          imageUri,
+          metadataUri,
+          txBase64,
+          mintSecretKeyB64: Buffer.from(mintSigner.secretKey).toString("base64"),
+        },
+      ],
     };
 
     await kv.set(attemptKey(attemptId), attempt, { ex: 60 * 60 });
@@ -276,9 +248,9 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       attemptId,
-      txs: mints.map(({ index, serialStr, mint, txBase64 }) => ({ index, serialStr, mint, txBase64 })),
-      mints: mints.map(({ index, serialStr, mint, imageUri, metadataUri }) => ({ index, serialStr, mint, imageUri, metadataUri })),
-      note: "Server paid Irys uploads. Client signs mint tx (Solana fees) then submit to /api/player-mint/submit.",
+      txs: [{ index: idx, serialStr: expected.serialStr, mint: mintSigner.publicKey.toString(), txBase64 }],
+      mints: [{ index: idx, serialStr: expected.serialStr, mint: mintSigner.publicKey.toString(), imageUri, metadataUri }],
+      note: "Server paid Irys. Client sends the transaction (1 prompt) then calls submit with signature.",
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Build error" }, { status: 500 });

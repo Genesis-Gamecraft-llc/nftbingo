@@ -58,6 +58,7 @@ type AttemptRecord = {
     imageUri: string;
     metadataUri: string;
     txBase64: string;
+    mintSecretKeyB64: string;
   }>;
 };
 
@@ -218,8 +219,10 @@ export async function POST(req: Request) {
 
     builder.setFeePayer(userNoopSigner);
 
-    const signedByServer = await builder.buildAndSign(umi);
-    const txBytes = umi.transactions.serialize(signedByServer);
+    // IMPORTANT: Build an unsigned tx. Phantom/Lighthouse expects the wallet to sign first,
+    // then the server adds the remaining required signatures (mint + update authority) before sending.
+    const unsignedTx = await builder.build(umi);
+    const txBytes = umi.transactions.serialize(unsignedTx);
     const txBase64 = Buffer.from(txBytes).toString("base64");
 
     const attempt: AttemptRecord = {
@@ -235,6 +238,7 @@ export async function POST(req: Request) {
           imageUri,
           metadataUri,
           txBase64,
+          mintSecretKeyB64: Buffer.from(mintSigner.secretKey).toString("base64"),
         },
       ],
     };
