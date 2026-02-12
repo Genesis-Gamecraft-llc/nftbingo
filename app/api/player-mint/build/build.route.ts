@@ -218,16 +218,16 @@ export async function POST(req: Request) {
     );
 
     // IMPORTANT (Phantom Lighthouse): wallet signs FIRST.
-    // So we build an unsigned tx that *requires* the wallet signature (fee payer),
-    // then the client signs it, and the server adds the remaining required
+    // We build an unsigned tx that *requires* the wallet signature (fee payer).
+    // Then the client signs it, and the server adds the remaining required
     // signatures (mint signer + update authority) in /submit.
-    builder.setFeePayer(userNoopSigner);
+    //
+    // NOTE: Umi builders are immutable; always re-assign.
+    builder = builder.setFeePayer(userNoopSigner);
 
-    // IMPORTANT: blockhash is required or Umi will throw.
-    // (This is the error you're seeing: "Setting a blockhash is required...")
+    // A recent blockhash is required to build a tx.
     const latest = await umi.rpc.getLatestBlockhash();
-builder.setBlockhash(latest.blockhash);
-
+    builder = builder.setBlockhash(latest.blockhash);
 
     const unsignedTx = await builder.build(umi);
     const txBytes = umi.transactions.serialize(unsignedTx);

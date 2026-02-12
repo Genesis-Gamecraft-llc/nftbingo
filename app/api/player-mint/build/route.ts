@@ -217,10 +217,18 @@ export async function POST(req: Request) {
       })
     );
 
-    builder.setFeePayer(userNoopSigner);
+    // IMPORTANT (Phantom Lighthouse): wallet signs FIRST.
+    // We build an unsigned tx that *requires* the wallet signature (fee payer).
+    // Then the client signs it, and the server adds the remaining required
+    // signatures (mint signer + update authority) in /submit.
+    //
+    // NOTE: Umi builders are immutable; always re-assign.
+    builder = builder.setFeePayer(userNoopSigner);
 
-    // IMPORTANT: Build an unsigned tx. Phantom/Lighthouse expects the wallet to sign first,
-    // then the server adds the remaining required signatures (mint + update authority) before sending.
+    // A recent blockhash is required to build a tx.
+    const latest = await umi.rpc.getLatestBlockhash();
+    builder = builder.setBlockhash(latest.blockhash);
+
     const unsignedTx = await builder.build(umi);
     const txBytes = umi.transactions.serialize(unsignedTx);
     const txBase64 = Buffer.from(txBytes).toString("base64");
@@ -238,7 +246,7 @@ export async function POST(req: Request) {
           imageUri,
           metadataUri,
           txBase64,
-          mintSecretKeyB64: Buffer.from(mintSigner.secretKey).toString("base64"),
+          mintSecretKeyB64: Buffer.from((mintSigner as any).secretKey as Uint8Array).toString("base64"),
         },
       ],
     };
