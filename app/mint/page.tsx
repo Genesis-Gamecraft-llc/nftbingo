@@ -460,10 +460,10 @@ async function doPlayerMintOne() {
                 <div className="mt-4 space-y-3 text-slate-700">
                   <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
                     <ul className="list-disc pl-5 space-y-2 text-sm">
-                      <li>Player Series cards are free to mint (you only pay network + storage fees, usually ~$2 depending on Solana network conditions).</li>
+                      <li>Player Series cards are free to mint (you only pay Solana network fees, usually ~$2 depending on Solana network conditions).</li>
                       <li>These cards can be used in any game that supports Player Series cards on NFTBingo.net</li>
                       <li>These cards are not be eligible for Founders Series rewards or special benefits. They will not be eligible for delegating or renting in our marketplace.</li>
-                      <li>Your wallet will likely ask you to verify 4 times. There are 2 for Irys upload and fee and 2 for wallet transfer and fee. This is where the ~$2 comes from. </li>
+                      <li>Your wallet will ask you to verify the transaction before the card is transferred to your wallet. This is where the ~$2 comes from. </li>
                     </ul>
                   </div>
 
@@ -527,7 +527,7 @@ async function doPlayerMintOne() {
 
                 {!foundersSubmit?.ok ? (
                   <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-600">
-                    Mint a Founders card to see the reveal preview here.
+                    Mint a Founders Series card to see the reveal here.
                   </div>
                 ) : (
                   <>
@@ -569,7 +569,7 @@ async function doPlayerMintOne() {
 
                 <div className="mt-5 rounded-xl bg-gradient-to-r from-pink-50 via-fuchsia-50 to-indigo-50 border border-slate-200 p-4">
                   <div className="text-sm text-slate-700 space-y-2">
-                    <div><span className="font-semibold">Cost:</span> FREE + network + storage fees</div>
+                    <div><span className="font-semibold">User Cost:</span> FREE + network + storage fees</div>
                     <div><span className="font-semibold">Limit:</span> 1 per mint</div>
                     <div><span className="font-semibold">Use:</span> enter games on NFTBingo.net</div>
                   </div>
@@ -586,7 +586,7 @@ async function doPlayerMintOne() {
                   </>
                 ) : (
                   <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-600">
-                    Mint a Player card to preview it here.
+                    Mint a Players Series NFTBingo card to preview it here.
                   </div>
                 )}
               </>
@@ -595,7 +595,7 @@ async function doPlayerMintOne() {
         </div>
 
         <div className="mt-10 text-xs text-slate-500 text-center">
-          Founders Series cards are USD pegged to $125 at mint time. Storage fees are payed by us, mint fees are payed by you. Player Series cards are free to mint, but you pay the network and storage fees (usually a few dollars). Prices may fluctuate based on Solana network conditions.
+          Founders Series cards are USD pegged to $125 at mint time. Irys upload and storage fees are paid by NFTBingo, mint fees are payed by you. Player Series cards are FREE to mint. We pay the Irys storage and upload, but you pay the Solana network fees (usually a few dollars). Prices may fluctuate based on Solana network conditions.
         </div>
       </section>
 
