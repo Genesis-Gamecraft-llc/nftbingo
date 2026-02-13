@@ -18,6 +18,46 @@ type BingoCard = {
 
 type ClaimResult = "ACCEPTED" | "REJECTED";
 
+
+type ServerWinner = { cardId: string; wallet: string; isFounders: boolean; ts: number };
+
+type ServerGameState = {
+  ok: true;
+  gameId: string;
+  gameNumber: number;
+  gameType: GameType;
+  status: GameStatus;
+  entryFeeSol: number;
+  calledNumbers: number[];
+  winners: ServerWinner[];
+  // derived on server
+  entriesCount: number;
+  totalPotSol: number;
+  playerPotSol: number;
+  foundersPotSol: number;
+  foundersBonusSol: number;
+  jackpotSol: number;
+  // wallet-specific (only when wallet query provided)
+  my?: { enteredCardIds: string[]; lastSig?: string; lastTotalSol?: number };
+};
+
+async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, {
+    cache: "no-store",
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+  const data = (await res.json().catch(() => ({}))) as any;
+  if (!res.ok) {
+    const msg = data?.error || data?.message || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data as T;
+}
+
 /** ===== Helpers ===== */
 
 async function confirmSignatureByPolling(
@@ -458,6 +498,97 @@ export default function PlayPage() {
   const wallet = useWallet();
   const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
 
+// Server-persisted game state (Upstash-backed via /api/game/*)
+const [serverGameId, setServerGameId] = useState<string>("");
+const lastServerGameId = useRef<string>("");
+const [myEnteredIds, setMyEnteredIds] = useState<string[]>([]);
+const pollTimer = useRef<number | null>(null);
+
+function applyServerState(s: ServerGameState) {
+  // If a new game started server-side, reset client-only bits that should not carry over.
+  if (lastServerGameId.current && s.gameId && lastServerGameId.current !== s.gameId) {
+    setSelectedCards([]);
+    setEnteredCards([]);
+    setEntriesLocked(false);
+    setLastEntrySig("");
+    setLastEntryTotalSol(0);
+
+    setClaimResult(null);
+    setInvalidStrikes(0);
+    setLastClaimAt(0);
+    setClaimWindowOpenAt(null);
+    closeClaimWindow();
+  }
+
+  lastServerGameId.current = s.gameId;
+  setServerGameId(s.gameId);
+
+  setGameNumber(s.gameNumber);
+  setGameType(s.gameType);
+  setStatus(s.status);
+  setEntryFeeSol(s.entryFeeSol);
+  setCalledNumbers(Array.isArray(s.calledNumbers) ? s.calledNumbers : []);
+
+  const ws = Array.isArray(s.winners) ? s.winners : [];
+  setWinners(ws.map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
+
+  const mine = s.my?.enteredCardIds || [];
+  setMyEnteredIds(mine);
+
+  if (mine.length > 0) setEntriesLocked(true);
+  if (typeof s.my?.lastSig === "string") setLastEntrySig(s.my.lastSig || "");
+  if (typeof s.my?.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol || 0);
+}
+
+// Poll server state so game persists across refresh/devices
+useEffect(() => {
+  let alive = true;
+
+  async function tick() {
+    try {
+      const qs = walletAddress ? `?wallet=${encodeURIComponent(walletAddress)}` : "";
+      const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`);
+      if (!alive) return;
+      applyServerState(s);
+    } catch {
+      // ignore transient errors
+    }
+  }
+
+  tick();
+  if (pollTimer.current) window.clearInterval(pollTimer.current);
+  pollTimer.current = window.setInterval(tick, 1200);
+
+  return () => {
+    alive = false;
+    if (pollTimer.current) window.clearInterval(pollTimer.current);
+    pollTimer.current = null;
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [walletAddress]);
+
+// Sync "paid entries" from server → local enteredCards (so refreshes keep your entries)
+useEffect(() => {
+  if (!myEnteredIds.length) return;
+
+  const byId = new Map(walletCards.map((c) => [c.id, c]));
+  const mapped = myEnteredIds.map((id) => {
+    const found = byId.get(id);
+    if (found) return found;
+    return {
+      id,
+      label: "Entered Card",
+      type: "PLAYER" as CardType,
+      grid: demoCard("Entered Card", "PLAYER", mintToSeed(id)).grid,
+    } satisfies BingoCard;
+  });
+
+  setEnteredCards(mapped);
+  setEntriesLocked(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [myEnteredIds.join("|"), walletCards]);
+
+
   // Fetch wallet cards from server (allowed collections only)
   useEffect(() => {
     let cancelled = false;
@@ -533,78 +664,102 @@ export default function PlayPage() {
   }
 
   // Admin actions (MVP local)
-  function adminNewGame() {
-    setStatus("OPEN");
-    setCalledNumbers([]);
-    setSelectedCards([]);
-    setEnteredCards([]); // ✅ reset paid entries
-    setEntriesLocked(false);
-    setLastEntrySig("");
-    setLastEntryTotalSol(0);
-
-    setWinners([]);
-    setClaimResult(null);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
-  }
-
-  function adminLockGameStart() {
-    setStatus("LOCKED");
-    setClaimResult(null);
-    setWinners([]);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
-  }
-
-  function adminPauseToggle() {
-    if (status === "LOCKED") setStatus("PAUSED");
-    else if (status === "PAUSED") setStatus("LOCKED");
-  }
-
-  function adminEndGame() {
-    setStatus("ENDED");
-    closeClaimWindow();
-  }
-
-  function adminCloseAndIncrement() {
-    setGameNumber((n) => n + 1);
-    setStatus("CLOSED");
-    setCalledNumbers([]);
-    setSelectedCards([]);
-    setEnteredCards([]); // ✅ reset paid entries
-    setEntriesLocked(false);
-    setLastEntrySig("");
-    setLastEntryTotalSol(0);
-
-    setWinners([]);
-    setClaimResult(null);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
-  }
-
-  function adminCallNumber(n: number) {
-    if (status !== "LOCKED" && status !== "PAUSED") return;
-    setCalledNumbers((prev) => {
-      const next = uniquePush(prev, n);
-      if (claimWindowOpenAt) closeClaimWindow(); // next number called closes window
-      return next;
+  
+async function adminNewGame() {
+  try {
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "NEW_GAME" }),
     });
-    setClaimResult(null);
+    applyServerState(s);
+  } catch (e: any) {
+    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to start new game." });
   }
+}
 
-  function adminUndo() {
-    if (status !== "LOCKED" && status !== "PAUSED") return;
-    setCalledNumbers((prev) => removeLast(prev));
+async function adminLockGameStart() {
+  try {
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "LOCK" }),
+    });
+    applyServerState(s);
     setClaimResult(null);
+    setClaimWindowOpenAt(null);
+    closeClaimWindow();
+  } catch (e: any) {
+    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to lock game." });
   }
+}
 
-  // Player actions
+async function adminPauseToggle() {
+  try {
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "PAUSE_TOGGLE" }),
+    });
+    applyServerState(s);
+  } catch (e: any) {
+    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to pause/resume." });
+  }
+}
+
+async function adminEndGame() {
+  try {
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "END" }),
+    });
+    applyServerState(s);
+    closeClaimWindow();
+  } catch (e: any) {
+    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to end game." });
+  }
+}
+
+async function adminCloseAndIncrement() {
+  try {
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "CLOSE_NEXT" }),
+    });
+    applyServerState(s);
+    closeClaimWindow();
+  } catch (e: any) {
+    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to close & next." });
+  }
+}
+
+async function adminCallNumber(n: number) {
+  if (status !== "LOCKED" && status !== "PAUSED") return;
+  try {
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "CALL_NUMBER", number: n }),
+    });
+    applyServerState(s);
+    if (claimWindowOpenAt) closeClaimWindow();
+    setClaimResult(null);
+  } catch (e: any) {
+    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to call number." });
+  }
+}
+
+async function adminUndo() {
+  if (status !== "LOCKED" && status !== "PAUSED") return;
+  try {
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "UNDO_LAST" }),
+    });
+    applyServerState(s);
+    setClaimResult(null);
+  } catch (e: any) {
+    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to undo." });
+  }
+}
+
+// Player actions
   function toggleSelectCard(card: BingoCard) {
     if (status !== "OPEN") return;
     if (entriesLocked) return; // ✅ can’t change after paying
@@ -698,6 +853,23 @@ export default function PlayPage() {
 // ✅ Confirm without websockets (no signatureSubscribe)
 await confirmSignatureByPolling(connection, sig, 60_000);
 
+// Persist entry on backend (so refresh/devices keep state)
+try {
+  const s = await fetchJson<ServerGameState>("/api/game/enter", {
+    method: "POST",
+    body: JSON.stringify({
+      wallet: wallet.publicKey.toBase58(),
+      cardIds: selectedCards.map((c) => c.id),
+      signature: sig,
+      totalSol,
+    }),
+  });
+  applyServerState(s);
+} catch {
+  // If persistence fails, keep local UX.
+}
+
+
 
       // ✅ only now do we count them in pots
       setEnteredCards(selectedCards);
@@ -775,13 +947,33 @@ await confirmSignatureByPolling(connection, sig, 60_000);
     const claimedCard = eligible[0];
     const isFounders = claimedCard.type === "FOUNDERS";
 
-    setWinners((prev) => [...prev, { cardId: claimedCard.id, wallet: walletAddress, isFounders }]);
-    setClaimResult({
-      result: "ACCEPTED",
-      message: `BINGO accepted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}). (MVP local)`,
-    });
+    
+// Persist winner on backend (manual card verification is still on you for MVP)
+try {
+  const s = await fetchJson<ServerGameState>("/api/game/claim", {
+    method: "POST",
+    body: JSON.stringify({
+      wallet: walletAddress,
+      cardId: claimedCard.id,
+      isFounders, // server may ignore later when we do trusted verification
+    }),
+  });
+  applyServerState(s);
+  setClaimResult({
+    result: "ACCEPTED",
+    message: `BINGO accepted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}).`,
+  });
+} catch (e: any) {
+  // fallback to local list so testing can continue even if server hiccups
+  setWinners((prev) => [...prev, { cardId: claimedCard.id, wallet: walletAddress, isFounders }]);
+  setClaimResult({
+    result: "ACCEPTED",
+    message: `BINGO accepted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}). (local fallback)`,
+  });
+} finally {
+  setClaiming(false);
+}
 
-    setClaiming(false);
   }
 
   // Payout preview (fair model)
