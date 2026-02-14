@@ -437,6 +437,9 @@ export default function PlayPage() {
 
   // Entry pricing
   const [entryFeeSol, setEntryFeeSol] = useState<number>(0.05);
+  const [entryFeeDraft, setEntryFeeDraft] = useState<string>("0.05");
+  const [isEditingFee, setIsEditingFee] = useState<boolean>(false);
+
 
   // Called numbers (MVP: mirror-click admin)
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
@@ -526,7 +529,10 @@ function applyServerState(s: ServerGameState) {
   setGameNumber(s.gameNumber);
   setGameType(s.gameType);
   setStatus(s.status);
-  setEntryFeeSol(s.entryFeeSol);
+  if (!isEditingFee) {
+    setEntryFeeSol(s.entryFeeSol);
+    setEntryFeeDraft(String(s.entryFeeSol));
+  }
   setCalledNumbers(Array.isArray(s.calledNumbers) ? s.calledNumbers : []);
 
   const ws = Array.isArray(s.winners) ? s.winners : [];
@@ -539,6 +545,12 @@ function applyServerState(s: ServerGameState) {
   if (typeof s.my?.lastSig === "string") setLastEntrySig(s.my.lastSig || "");
   if (typeof s.my?.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol || 0);
 }
+
+useEffect(() => {
+  if (!isEditingFee) {
+    setEntryFeeDraft(String(entryFeeSol));
+  }
+}, [entryFeeSol, isEditingFee]);
 
 // Poll server state so game persists across refresh/devices
 useEffect(() => {
@@ -756,6 +768,20 @@ async function adminUndo() {
     setClaimResult(null);
   } catch (e: any) {
     setClaimResult({ result: "REJECTED", message: e?.message || "Failed to undo." });
+  }
+}
+
+async function adminSetEntryFee(nextFee: number) {
+  if (!isAdmin) return;
+
+  try {
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "SET_FEE", entryFeeSol: nextFee }),
+    });
+    applyServerState(s);
+  } catch (e: any) {
+    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to set entry fee." });
   }
 }
 
@@ -1282,9 +1308,26 @@ try {
                       type="number"
                       step="0.001"
                       min="0"
-                      value={entryFeeSol}
-                      disabled={status === "LOCKED" || status === "PAUSED"}
-                      onChange={(e) => setEntryFeeSol(clamp(parseFloat(e.target.value || "0"), 0, 100))}
+                      value={entryFeeDraft}
+                      disabled={!isAdmin || status === "LOCKED" || status === "PAUSED"}
+                      onFocus={() => setIsEditingFee(true)}
+                      onChange={(e) => {
+                        setEntryFeeDraft(e.target.value);
+                        const n = parseFloat(e.target.value);
+                        if (Number.isFinite(n)) setEntryFeeSol(clamp(n, 0, 100));
+                      }}
+                      onBlur={async () => {
+                        setIsEditingFee(false);
+                        const n = parseFloat(entryFeeDraft);
+                        if (!Number.isFinite(n)) {
+                          setEntryFeeDraft(String(entryFeeSol));
+                          return;
+                        }
+                        const fee = clamp(n, 0, 100);
+                        setEntryFeeSol(fee);
+                        setEntryFeeDraft(String(fee));
+                        await adminSetEntryFee(fee);
+                      }}
                       className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                     />
                     <span className="text-sm text-slate-600">per card</span>
@@ -1296,7 +1339,7 @@ try {
                   <div className="text-sm text-slate-600">Game Type</div>
                   <select
                     value={gameType}
-                    disabled={status === "LOCKED" || status === "PAUSED"}
+                    disabled={!isAdmin || status === "LOCKED" || status === "PAUSED"}
                     onChange={(e) => setGameType(e.target.value as GameType)}
                     className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                   >
