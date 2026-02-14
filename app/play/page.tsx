@@ -433,13 +433,15 @@ export default function PlayPage() {
   // Game config
   const [gameNumber, setGameNumber] = useState<number>(1);
   const [gameType, setGameType] = useState<GameType>("STANDARD");
+  const [gameTypeDraft, setGameTypeDraft] = useState<GameType>("STANDARD");
+  const [isEditingGameType, setIsEditingGameType] = useState<boolean>(false);
   const [status, setStatus] = useState<GameStatus>("CLOSED");
 
   // Entry pricing
   const [entryFeeSol, setEntryFeeSol] = useState<number>(0.05);
+  // Admin edit buffer (polling-safe)
   const [entryFeeDraft, setEntryFeeDraft] = useState<string>("0.05");
-  const [isEditingFee, setIsEditingFee] = useState<boolean>(false);
-
+  const [isEditingEntryFee, setIsEditingEntryFee] = useState<boolean>(false);
 
   // Called numbers (MVP: mirror-click admin)
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
@@ -528,9 +530,13 @@ function applyServerState(s: ServerGameState) {
 
   setGameNumber(s.gameNumber);
   setGameType(s.gameType);
+  if (!isEditingGameType) {
+    setGameTypeDraft(s.gameType);
+  }
   setStatus(s.status);
-  if (!isEditingFee) {
-    setEntryFeeSol(s.entryFeeSol);
+  // Keep authoritative value from server, but don’t clobber admin typing mid-edit
+  setEntryFeeSol(s.entryFeeSol);
+  if (!isEditingEntryFee) {
     setEntryFeeDraft(String(s.entryFeeSol));
   }
   setCalledNumbers(Array.isArray(s.calledNumbers) ? s.calledNumbers : []);
@@ -545,12 +551,6 @@ function applyServerState(s: ServerGameState) {
   if (typeof s.my?.lastSig === "string") setLastEntrySig(s.my.lastSig || "");
   if (typeof s.my?.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol || 0);
 }
-
-useEffect(() => {
-  if (!isEditingFee) {
-    setEntryFeeDraft(String(entryFeeSol));
-  }
-}, [entryFeeSol, isEditingFee]);
 
 // Poll server state so game persists across refresh/devices
 useEffect(() => {
@@ -742,6 +742,38 @@ async function adminCloseAndIncrement() {
   }
 }
 
+
+  async function adminSetEntryFee(nextFee: number) {
+    if (!isAdmin) return;
+    if (status !== "OPEN" && status !== "CLOSED") return;
+
+    try {
+      const s = await fetchJson<ServerGameState>("/api/game/admin", {
+        method: "POST",
+        body: JSON.stringify({ action: "SET_FEE", entryFeeSol: nextFee }),
+      });
+      applyServerState(s);
+    } catch (e: any) {
+      setClaimResult({ result: "REJECTED", message: e?.message || "Failed to set entry fee." });
+    }
+  }
+
+
+  async function adminSetGameType(nextType: GameType) {
+    if (!isAdmin) return;
+    if (status !== "OPEN" && status !== "CLOSED") return;
+
+    try {
+      const s = await fetchJson<ServerGameState>("/api/game/admin", {
+        method: "POST",
+        body: JSON.stringify({ action: "SET_TYPE", gameType: nextType }),
+      });
+      applyServerState(s);
+    } catch (e: any) {
+      setClaimResult({ result: "REJECTED", message: e?.message || "Failed to set game type." });
+    }
+  }
+
 async function adminCallNumber(n: number) {
   if (status !== "LOCKED" && status !== "PAUSED") return;
   try {
@@ -768,20 +800,6 @@ async function adminUndo() {
     setClaimResult(null);
   } catch (e: any) {
     setClaimResult({ result: "REJECTED", message: e?.message || "Failed to undo." });
-  }
-}
-
-async function adminSetEntryFee(nextFee: number) {
-  if (!isAdmin) return;
-
-  try {
-    const s = await fetchJson<ServerGameState>("/api/game/admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "SET_FEE", entryFeeSol: nextFee }),
-    });
-    applyServerState(s);
-  } catch (e: any) {
-    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to set entry fee." });
   }
 }
 
@@ -1310,23 +1328,21 @@ try {
                       min="0"
                       value={entryFeeDraft}
                       disabled={!isAdmin || status === "LOCKED" || status === "PAUSED"}
-                      onFocus={() => setIsEditingFee(true)}
-                      onChange={(e) => {
-                        setEntryFeeDraft(e.target.value);
-                        const n = parseFloat(e.target.value);
-                        if (Number.isFinite(n)) setEntryFeeSol(clamp(n, 0, 100));
-                      }}
-                      onBlur={async () => {
-                        setIsEditingFee(false);
-                        const n = parseFloat(entryFeeDraft);
-                        if (!Number.isFinite(n)) {
+                      onFocus={() => setIsEditingEntryFee(true)}
+                      onChange={(e) => setEntryFeeDraft(e.target.value)}
+                      onBlur={() => {
+                        setIsEditingEntryFee(false);
+                        const v = Number(entryFeeDraft);
+                        if (!Number.isFinite(v) || v <= 0) {
+                          // revert display to server value
                           setEntryFeeDraft(String(entryFeeSol));
                           return;
                         }
-                        const fee = clamp(n, 0, 100);
-                        setEntryFeeSol(fee);
-                        setEntryFeeDraft(String(fee));
-                        await adminSetEntryFee(fee);
+                        const nextFee = clamp(v, 0.000001, 100);
+                        // Optimistic local update so UI doesn’t feel laggy
+                        setEntryFeeSol(nextFee);
+                        setEntryFeeDraft(String(nextFee));
+                        adminSetEntryFee(nextFee);
                       }}
                       className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                     />
@@ -1338,9 +1354,15 @@ try {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-sm text-slate-600">Game Type</div>
                   <select
-                    value={gameType}
+                    value={gameTypeDraft}
                     disabled={!isAdmin || status === "LOCKED" || status === "PAUSED"}
-                    onChange={(e) => setGameType(e.target.value as GameType)}
+                    onFocus={() => setIsEditingGameType(true)}
+                    onChange={(e) => setGameTypeDraft(e.target.value as GameType)}
+                    onBlur={() => {
+                      setIsEditingGameType(false);
+                      setGameType(gameTypeDraft);
+                      adminSetGameType(gameTypeDraft);
+                    }}
                     className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                   >
                     <option value="STANDARD">Standard</option>
