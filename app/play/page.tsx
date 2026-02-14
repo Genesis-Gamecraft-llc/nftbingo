@@ -443,6 +443,10 @@ export default function PlayPage() {
   const [entryFeeDraft, setEntryFeeDraft] = useState<string>("0.05");
   const [isEditingEntryFee, setIsEditingEntryFee] = useState<boolean>(false);
 
+  const isEditingGameTypeRef = useRef(false);
+const isEditingEntryFeeRef = useRef(false);
+
+
   // Called numbers (MVP: mirror-click admin)
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const calledSet = useMemo(() => new Set(calledNumbers), [calledNumbers]);
@@ -530,13 +534,14 @@ function applyServerState(s: ServerGameState) {
 
   setGameNumber(s.gameNumber);
   setGameType(s.gameType);
-  if (!isEditingGameType) {
+  // Don’t clobber admin typing mid-edit (use refs to avoid stale closure in polling)
+  if (!isEditingGameTypeRef.current) {
     setGameTypeDraft(s.gameType);
   }
   setStatus(s.status);
   // Keep authoritative value from server, but don’t clobber admin typing mid-edit
   setEntryFeeSol(s.entryFeeSol);
-  if (!isEditingEntryFee) {
+  if (!isEditingEntryFeeRef.current) {
     setEntryFeeDraft(String(s.entryFeeSol));
   }
   setCalledNumbers(Array.isArray(s.calledNumbers) ? s.calledNumbers : []);
@@ -1328,10 +1333,11 @@ try {
                       min="0"
                       value={entryFeeDraft}
                       disabled={!isAdmin || status === "LOCKED" || status === "PAUSED"}
-                      onFocus={() => setIsEditingEntryFee(true)}
+                      onFocus={() => { setIsEditingEntryFee(true); isEditingEntryFeeRef.current = true; }}
                       onChange={(e) => setEntryFeeDraft(e.target.value)}
                       onBlur={() => {
                         setIsEditingEntryFee(false);
+                        isEditingEntryFeeRef.current = false;
                         const v = Number(entryFeeDraft);
                         if (!Number.isFinite(v) || v <= 0) {
                           // revert display to server value
@@ -1356,10 +1362,11 @@ try {
                   <select
                     value={gameTypeDraft}
                     disabled={!isAdmin || status === "LOCKED" || status === "PAUSED"}
-                    onFocus={() => setIsEditingGameType(true)}
+                    onFocus={() => { setIsEditingGameType(true); isEditingGameTypeRef.current = true; }}
                     onChange={(e) => setGameTypeDraft(e.target.value as GameType)}
                     onBlur={() => {
                       setIsEditingGameType(false);
+                        isEditingGameTypeRef.current = false;
                       setGameType(gameTypeDraft);
                       adminSetGameType(gameTypeDraft);
                     }}
