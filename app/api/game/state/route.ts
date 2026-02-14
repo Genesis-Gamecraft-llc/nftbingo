@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
-import { loadState } from "../_store";
+import { loadState, derivePots } from "../_store";
 import { buildStateResponse } from "../_stateResponse";
+
+export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const wallet = url.searchParams.get("wallet") || undefined;
 
   const state = await loadState();
-  const out = await buildStateResponse(state, wallet || undefined);
+  const pots = derivePots(state);
 
-  return NextResponse.json(out, { headers: { "Cache-Control": "no-store" } });
+  const payload = await buildStateResponse(state, wallet);
+  return NextResponse.json({ ...payload, pots }, { headers: { "Cache-Control": "no-store" } });
 }
