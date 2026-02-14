@@ -437,6 +437,14 @@ export default function PlayPage() {
   const [isEditingGameType, setIsEditingGameType] = useState<boolean>(false);
   const [status, setStatus] = useState<GameStatus>("CLOSED");
 
+  // Server-derived pots (authoritative)
+  const [entriesCount, setEntriesCount] = useState<number>(0);
+  const [totalPotSol, setTotalPotSol] = useState<number>(0);
+  const [playerSeriesPotSol, setPlayerSeriesPotSol] = useState<number>(0);
+  const [foundersSeriesPotSol, setFoundersSeriesPotSol] = useState<number>(0);
+  const [jackpotPotSol, setJackpotPotSol] = useState<number>(0);
+  const [foundersBonusSol, setFoundersBonusSol] = useState<number>(0);
+
   // Entry pricing
   const [entryFeeSol, setEntryFeeSol] = useState<number>(0.05);
   // Admin edit buffer (polling-safe)
@@ -545,6 +553,14 @@ function applyServerState(s: ServerGameState) {
     setEntryFeeDraft(String(s.entryFeeSol));
   }
   setCalledNumbers(Array.isArray(s.calledNumbers) ? s.calledNumbers : []);
+
+  // Server-derived pots
+  if (typeof s.entriesCount === "number") setEntriesCount(s.entriesCount);
+  if (typeof s.totalPotSol === "number") setTotalPotSol(s.totalPotSol);
+  if (typeof s.playerPotSol === "number") setPlayerSeriesPotSol(s.playerPotSol);
+  if (typeof s.foundersPotSol === "number") setFoundersSeriesPotSol(s.foundersPotSol);
+  if (typeof s.jackpotSol === "number") setJackpotPotSol(s.jackpotSol);
+  if (typeof s.foundersBonusSol === "number") setFoundersBonusSol(s.foundersBonusSol);
 
   const ws = Array.isArray(s.winners) ? s.winners : [];
   setWinners(ws.map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
@@ -763,6 +779,16 @@ async function adminCloseAndIncrement() {
     }
   }
 
+  async function adminResetJackpot() {
+    if (!isAdmin) return;
+    const s = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify({ action: "RESET_JACKPOT" }),
+    });
+    applyServerState(s);
+  }
+
+
 
   async function adminSetGameType(nextType: GameType) {
     if (!isAdmin) return;
@@ -940,14 +966,13 @@ try {
     }
   }
 
-  // Derived: use PAID entries for pots
-  const entriesCount = enteredCards.length;
-  const totalPot = entriesCount * entryFeeSol;
-
-  const playerSeriesPot = totalPot * 0.75;
-  const foundersBonus = totalPot * 0.05;
-  const foundersSeriesPot = playerSeriesPot + foundersBonus; // 80%
-  const jackpotPot = totalPot * 0.05;
+ 
+  // Pots (authoritative from server)
+  const totalPot = totalPotSol;
+  const playerSeriesPot = playerSeriesPotSol;
+  const foundersBonus = foundersBonusSol;
+  const foundersSeriesPot = foundersSeriesPotSol;
+  const jackpotPot = jackpotPotSol;
 
   // Derived: winning cards (use paid entries once locked; fallback to selected for admin testing)
   const activeEntries = entriesLocked ? enteredCards : selectedCards;
@@ -981,7 +1006,6 @@ try {
     if (!canClaimBingo) return;
 
     const now = Date.now();
-    setLastClaimAt(now);
     setClaiming(true);
     setClaimResult(null);
 
@@ -1007,21 +1031,31 @@ try {
       isFounders, // server may ignore later when we do trusted verification
     }),
   });
+
+  // Only start claim cooldown AFTER server confirms
+  setLastClaimAt(now);
+
   applyServerState(s);
   setClaimResult({
     result: "ACCEPTED",
-    message: `BINGO accepted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}).`,
+    message: `BINGO claim submitted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}).`,
   });
 } catch (e: any) {
-  // fallback to local list so testing can continue even if server hiccups
-  setWinners((prev) => [...prev, { cardId: claimedCard.id, wallet: walletAddress, isFounders }]);
-  setClaimResult({
-    result: "ACCEPTED",
-    message: `BINGO accepted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}). (local fallback)`,
-  });
+  // If server rejects/fails, do NOT fake-accept locally (admin won’t see it)
+  const msg =
+    typeof e?.message === "string"
+      ? e.message
+      : typeof e === "string"
+        ? e
+        : "Claim rejected.";
+
+  setInvalidStrikes((s) => s + 1);
+  setClaimResult({ result: "REJECTED", message: msg });
+  return;
 } finally {
   setClaiming(false);
 }
+
 
   }
 
@@ -1442,6 +1476,19 @@ try {
 
               <div className="mt-8 border-t border-slate-200 pt-6">
                 <div className="flex items-center justify-between mb-2">
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={adminResetJackpot}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                >
+                  Reset Progressive Jackpot
+                </button>
+                <div className="mt-2 text-xs text-slate-500">
+                  Admin only. Jackpot carries across games until you reset it.
+                </div>
+              </div>
+
                   <h3 className="text-lg font-semibold text-slate-900">Mirror-click calls</h3>
                   <button
                     type="button"

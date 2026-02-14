@@ -6,15 +6,15 @@ import {
   ensureUniqueCalled,
   removeLastCalled,
   makeNewGame,
+  bankProgressiveJackpot,
 } from "../_store";
+
+export const runtime = "nodejs";
 
 async function isAdminCookie() {
   const cookieStore = await cookies();
-  const c = cookieStore.get("nftbingo_admin")?.value;
-  return c === "1";
+  return cookieStore.get("nftbingo_admin")?.value === "1";
 }
-
-export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   if (!(await isAdminCookie())) {
@@ -50,12 +50,20 @@ export async function POST(req: Request) {
     }
 
     case "CLOSE_NEXT": {
+      // Bank current game's jackpot contribution before wiping entries
+      next = bankProgressiveJackpot(next);
+
       next.gameNumber = (state.gameNumber || 1) + 1;
       next.status = "CLOSED";
       next.calledNumbers = [];
       next.winners = [];
       next.entries = [];
       next.gameId = `game-${next.gameNumber}-${Date.now()}`;
+      break;
+    }
+
+    case "RESET_JACKPOT": {
+      next.progressiveJackpotSol = 0;
       break;
     }
 
@@ -85,29 +93,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid game type" }, { status: 400 });
       }
       if (next.status !== "OPEN" && next.status !== "CLOSED") {
-        return NextResponse.json(
-          { error: "Can't change type during a live game" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Can't change type during a live game" }, { status: 400 });
       }
       next.gameType = t as any;
       break;
     }
 
     case "SET_FEE": {
-      const feeRaw = body?.entryFeeSol;
-      const fee = typeof feeRaw === "string" ? Number(feeRaw) : Number(feeRaw);
-
+      const fee = Number(body?.entryFeeSol);
       if (!Number.isFinite(fee) || fee <= 0 || fee >= 100) {
         return NextResponse.json({ error: "Invalid entry fee" }, { status: 400 });
       }
       if (next.status !== "OPEN" && next.status !== "CLOSED") {
-        return NextResponse.json(
-          { error: "Can't change entry fee during a live game" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Can't change entry fee during a live game" }, { status: 400 });
       }
-      // normalize to 8 decimals max (prevents float spam)
       next.entryFeeSol = Math.round(fee * 1e8) / 1e8;
       break;
     }

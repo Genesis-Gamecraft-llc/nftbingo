@@ -20,6 +20,10 @@ export type GameState = {
     totalSol: number;
     ts: number;
   }>;
+
+  // Progressive jackpot carries across games until admin resets
+  progressiveJackpotSol: number;
+
   updatedAt: number;
 };
 
@@ -32,30 +36,25 @@ const DEFAULT_STATE: GameState = {
   calledNumbers: [],
   winners: [],
   entries: [],
+  progressiveJackpotSol: 0,
   updatedAt: Date.now(),
 };
 
-const KEY = "nftbingo:gameState:v1";
+const KEY = "nftbingo:gameState:v2";
 
 function getUpstashRestUrl() {
-  // Prefer your explicit vars
   const u = process.env.UPSTASH_REDIS_REST_URL?.trim();
   if (u) return u;
-
-  // Fallback to Vercel KV vars if present
   const kv = process.env.KV_REST_API_URL?.trim();
   if (kv) return kv;
-
   return "";
 }
 
 function getUpstashRestToken() {
   const t = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
   if (t) return t;
-
   const kv = process.env.KV_REST_API_TOKEN?.trim();
   if (kv) return kv;
-
   return "";
 }
 
@@ -65,7 +64,6 @@ function hasUpstash() {
 
 /**
  * Upstash Redis REST pipeline expects body: [["CMD","arg1","arg2"], ["CMD2",...]]
- * Docs: /pipeline
  */
 async function upstashPipeline(commands: Array<Array<string>>) {
   const url = getUpstashRestUrl();
@@ -84,11 +82,8 @@ async function upstashPipeline(commands: Array<Array<string>>) {
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    // include some debug info without leaking secrets
     const detail =
-      typeof data === "object" && data
-        ? JSON.stringify(data).slice(0, 300)
-        : "no-json";
+      typeof data === "object" && data ? JSON.stringify(data).slice(0, 300) : "no-json";
     throw new Error(`Upstash error (${res.status}): ${detail}`);
   }
 
@@ -98,7 +93,6 @@ async function upstashPipeline(commands: Array<Array<string>>) {
 let memoryState: GameState | null = null;
 
 export async function loadState(): Promise<GameState> {
-  // Dev fallback (no persistence across serverless instances)
   if (!hasUpstash()) {
     if (!memoryState) memoryState = { ...DEFAULT_STATE, updatedAt: Date.now() };
     return memoryState;
@@ -110,7 +104,14 @@ export async function loadState(): Promise<GameState> {
   if (!v) return await saveState({ ...DEFAULT_STATE, updatedAt: Date.now() });
 
   try {
-    return JSON.parse(v) as GameState;
+    const parsed = JSON.parse(v) as Partial<GameState>;
+    // Backward compatibility if older key existed
+    return {
+      ...DEFAULT_STATE,
+      ...parsed,
+      progressiveJackpotSol: Number(parsed.progressiveJackpotSol ?? DEFAULT_STATE.progressiveJackpotSol) || 0,
+      updatedAt: Date.now(),
+    };
   } catch {
     return await saveState({ ...DEFAULT_STATE, updatedAt: Date.now() });
   }
@@ -137,8 +138,9 @@ export function derivePots(state: GameState) {
   const totalPotSol = entriesCount * (state.entryFeeSol || 0);
   const playerPotSol = totalPotSol * 0.75;
   const foundersBonusSol = totalPotSol * 0.05;
-  const foundersPotSol = playerPotSol + foundersBonusSol;
-  const jackpotSol = totalPotSol * 0.05;
+  const foundersPotSol = playerPotSol + foundersBonusSol; // 80%
+  const progressive = state.progressiveJackpotSol || 0;
+  const jackpotSol = progressive + totalPotSol * 0.05;
 
   return {
     entriesCount,
@@ -147,6 +149,16 @@ export function derivePots(state: GameState) {
     foundersPotSol,
     foundersBonusSol,
     jackpotSol,
+  };
+}
+
+// When a game rolls over, bank this game's jackpot contribution into the progressive pool.
+export function bankProgressiveJackpot(state: GameState): GameState {
+  const { totalPotSol } = derivePots(state);
+  const add = totalPotSol * 0.05;
+  return {
+    ...state,
+    progressiveJackpotSol: Math.round(((state.progressiveJackpotSol || 0) + add) * 1e9) / 1e9,
   };
 }
 
@@ -169,6 +181,7 @@ export function makeNewGame(prev: GameState): GameState {
     calledNumbers: [],
     winners: [],
     entries: [],
+    // keep progressiveJackpotSol
     updatedAt: Date.now(),
   };
 }
