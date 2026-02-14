@@ -21,12 +21,18 @@ export async function buildStateResponse(state: GameState, wallet?: string) {
     foundersPotSol: pots.foundersPotSol,
     foundersBonusSol: pots.foundersBonusSol,
     jackpotSol: pots.jackpotSol,
+    progressiveJackpotSol: state.progressiveJackpotSol || 0,
+    currentGameJackpotSol: pots.currentGameJackpotSol,
     // wallet-specific
     my: wallet
       ? (() => {
           const entry = (state.entries || []).find((e) => e.wallet === wallet);
           return entry
-            ? { enteredCardIds: entry.cardIds || [], lastSig: entry.signature, lastTotalSol: entry.totalSol }
+            ? {
+                enteredCardIds: entry.cardIds || [],
+                lastSig: entry.signature || null,
+                lastTotalSol: typeof entry.totalSol === "number" ? entry.totalSol : null,
+              }
             : { enteredCardIds: [] as string[] };
         })()
       : undefined,

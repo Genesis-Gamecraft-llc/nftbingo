@@ -1,16 +1,23 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { loadState, saveState, makeNewGame } from "../_store";
+import {
+  loadState,
+  saveState,
+  ensureUniqueCalled,
+  removeLastCalled,
+  makeNewGame,
+  type GameType,
+} from "../_store";
 
 export const runtime = "nodejs";
 
-async function isAdmin() {
+async function isAdminCookie() {
   const cookieStore = await cookies();
   return cookieStore.get("nftbingo_admin")?.value === "1";
 }
 
 export async function POST(req: Request) {
-  if (!(await isAdmin())) {
+  if (!(await isAdminCookie())) {
     return NextResponse.json({ error: "Admin only" }, { status: 401 });
   }
 
@@ -21,36 +28,98 @@ export async function POST(req: Request) {
   let next = { ...state };
 
   switch (action) {
-    case "NEW_GAME":
+    case "NEW_GAME": {
+      // OPEN entries fresh game
       next = makeNewGame(state);
       break;
+    }
 
-    case "LOCK":
+    case "LOCK": {
       next.status = "LOCKED";
       break;
+    }
 
-    case "RESUME":
-      next.status = "LOCKED";
+    case "PAUSE_TOGGLE": {
+      if (next.status === "LOCKED") next.status = "PAUSED";
+      else if (next.status === "PAUSED") next.status = "LOCKED";
       break;
+    }
 
-    case "END":
+    case "END": {
       next.status = "ENDED";
       break;
+    }
 
-    case "CLOSE_NEXT":
-      next.progressiveJackpotSol += state.currentGameJackpotSol || 0;
-      next = makeNewGame({ ...next, gameNumber: state.gameNumber + 1 });
+    case "CLOSE_NEXT": {
+      // Bank this game’s jackpot contribution into progressive pool BEFORE clearing entries
+      next.progressiveJackpotSol = (next.progressiveJackpotSol || 0) + (state.currentGameJackpotSol || 0);
+
+      // Increment game number & fully close
+      next.gameNumber = (state.gameNumber || 1) + 1;
+      next.gameId = `game-${next.gameNumber}-${Date.now()}`;
       next.status = "CLOSED";
+      next.calledNumbers = [];
+      next.winners = [];
+      next.entries = [];
+      next.currentGameJackpotSol = 0;
       break;
+    }
 
-    case "RESET_JACKPOT":
+    case "RESET_JACKPOT": {
       next.progressiveJackpotSol = 0;
+      next.currentGameJackpotSol = 0;
       break;
+    }
+
+    case "CALL_NUMBER": {
+      const n = Number(body?.number);
+      if (!(n >= 1 && n <= 75)) {
+        return NextResponse.json({ error: "Invalid number" }, { status: 400 });
+      }
+      if (next.status !== "LOCKED") {
+        return NextResponse.json({ error: "Game not locked" }, { status: 400 });
+      }
+      next.calledNumbers = ensureUniqueCalled(next.calledNumbers || [], n);
+      break;
+    }
+
+    case "UNDO_LAST": {
+      if (next.status !== "LOCKED") {
+        return NextResponse.json({ error: "Game not locked" }, { status: 400 });
+      }
+      next.calledNumbers = removeLastCalled(next.calledNumbers || []);
+      break;
+    }
+
+    case "SET_TYPE": {
+      const t = String(body?.gameType || "");
+      if (!["STANDARD", "FOUR_CORNERS", "BLACKOUT"].includes(t)) {
+        return NextResponse.json({ error: "Invalid game type" }, { status: 400 });
+      }
+      if (next.status !== "OPEN" && next.status !== "CLOSED") {
+        return NextResponse.json({ error: "Can't change type during a live game" }, { status: 400 });
+      }
+      next.gameType = t as GameType;
+      break;
+    }
+
+    case "SET_FEE": {
+      const fee = Number(body?.entryFeeSol);
+      if (!Number.isFinite(fee) || fee <= 0 || fee >= 100) {
+        return NextResponse.json({ error: "Invalid entry fee" }, { status: 400 });
+      }
+      if (next.status !== "OPEN" && next.status !== "CLOSED") {
+        return NextResponse.json({ error: "Can't change fee during a live game" }, { status: 400 });
+      }
+      next.entryFeeSol = Math.round(fee * 1e8) / 1e8;
+      break;
+    }
 
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
 
   const saved = await saveState(next);
-  return NextResponse.json({ ok: true, state: saved });
+  const { buildStateResponse } = await import("../_stateResponse");
+  return NextResponse.json(await buildStateResponse(saved), { headers: { "Cache-Control": "no-store" } });
 }
