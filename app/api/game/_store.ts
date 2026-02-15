@@ -2,10 +2,13 @@ import "server-only";
 
 export type GameType = "STANDARD" | "FOUR_CORNERS" | "BLACKOUT";
 export type GameStatus = "CLOSED" | "OPEN" | "LOCKED" | "PAUSED" | "ENDED";
+export type CardType = "PLAYER" | "FOUNDERS";
 
 export type Entry = {
   wallet: string;
   cardIds: string[];
+  /** Optional per-card type map for payout logic */
+  cardTypesById?: Record<string, CardType>;
   signature?: string;
   totalSol?: number;
   ts?: number;
@@ -31,20 +34,19 @@ export type GameState = {
   // progressive jackpot
   progressiveJackpotSol: number;
   currentGameJackpotSol: number;
+  /** GameId that has already been rolled into progressiveJackpotSol to avoid double-add */
+  lastProgressiveRollGameId: string | null;
 
   // claim window
   claimWindowEndsAt: number | null;
   lastClaim: { wallet: string; cardId: string; ts: number } | null;
 
-  // optimistic version for safe writes
-  version: number;
-
   updatedAt: number;
 };
 
-export const GAME_STATE_KEY = "nftbingo:gameState:v6";
+const KEY = "nftbingo:gameState:v5";
 
-export const DEFAULT_STATE: GameState = {
+const DEFAULT_STATE: GameState = {
   gameId: "game-1",
   gameNumber: 1,
   gameType: "STANDARD",
@@ -55,25 +57,23 @@ export const DEFAULT_STATE: GameState = {
   winners: [],
   progressiveJackpotSol: 0,
   currentGameJackpotSol: 0,
+  lastProgressiveRollGameId: null,
   claimWindowEndsAt: null,
   lastClaim: null,
-  version: 1,
   updatedAt: Date.now(),
 };
 
-export const DEFAULT_STATE_JSON = JSON.stringify(DEFAULT_STATE);
-
-export function getUpstashRestUrl() {
+function getUpstashRestUrl() {
   return process.env.UPSTASH_REDIS_REST_URL?.trim() || process.env.KV_REST_API_URL?.trim() || "";
 }
-export function getUpstashRestToken() {
+function getUpstashRestToken() {
   return process.env.UPSTASH_REDIS_REST_TOKEN?.trim() || process.env.KV_REST_API_TOKEN?.trim() || "";
 }
-export function hasUpstash() {
+function hasUpstash() {
   return Boolean(getUpstashRestUrl() && getUpstashRestToken());
 }
 
-export async function upstashPipeline(commands: Array<Array<string>>) {
+async function upstashPipeline(commands: Array<Array<string>>) {
   const url = getUpstashRestUrl();
   const token = getUpstashRestToken();
 
@@ -86,20 +86,10 @@ export async function upstashPipeline(commands: Array<Array<string>>) {
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    const detail = typeof data === "object" && data ? JSON.stringify(data).slice(0, 600) : "no-json";
+    const detail = typeof data === "object" && data ? JSON.stringify(data).slice(0, 300) : "no-json";
     throw new Error(`Upstash error (${res.status}): ${detail}`);
   }
   return data as Array<{ result: any; error?: any }>;
-}
-
-export async function upstashEval(script: string, keys: string[], args: Array<string | number>) {
-  // Redis EVAL: EVAL <script> <numkeys> <key1..> <arg1..>
-  const cmd: Array<string> = ["EVAL", script, String(keys.length), ...keys.map(String), ...args.map(String)];
-  const out = await upstashPipeline([cmd]);
-  const r = out?.[0];
-  if (!r) throw new Error("Upstash eval returned no result.");
-  if (r.error) throw new Error(typeof r.error === "string" ? r.error : JSON.stringify(r.error));
-  return r.result;
 }
 
 let memoryState: GameState | null = null;
@@ -122,7 +112,7 @@ export function derivePots(state: GameState) {
 
   const totalPotSol = entriesCount * (state.entryFeeSol || 0);
 
-  // Match UI semantics
+  // Match your UI semantics
   const playerPotSol = totalPotSol * 0.75;
   const foundersBonusSol = totalPotSol * 0.05;
   const foundersPotSol = playerPotSol + foundersBonusSol;
@@ -141,22 +131,22 @@ export function derivePots(state: GameState) {
   };
 }
 
-export function withRecalc(state: GameState): GameState {
+function withRecalc(state: GameState): GameState {
   const pots = derivePots(state);
   return { ...state, currentGameJackpotSol: pots.currentGameJackpotSol };
 }
 
 export async function loadState(): Promise<GameState> {
   if (!hasUpstash()) {
-    if (!memoryState) memoryState = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now(), version: 1 });
+    if (!memoryState) memoryState = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
     return memoryState;
   }
 
-  const out = await upstashPipeline([["GET", GAME_STATE_KEY]]);
+  const out = await upstashPipeline([["GET", KEY]]);
   const raw = out?.[0]?.result;
 
   if (!raw) {
-    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now(), version: 1 });
+    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
     await saveState(seeded);
     return seeded;
   }
@@ -170,38 +160,43 @@ export async function loadState(): Promise<GameState> {
       entries: Array.isArray((parsed as any).entries) ? (parsed as any).entries : [],
       winners: Array.isArray((parsed as any).winners) ? (parsed as any).winners : [],
       progressiveJackpotSol: Number((parsed as any).progressiveJackpotSol || 0),
+      lastProgressiveRollGameId: typeof (parsed as any).lastProgressiveRollGameId === "string" ? (parsed as any).lastProgressiveRollGameId : null,
       claimWindowEndsAt: typeof (parsed as any).claimWindowEndsAt === "number" ? (parsed as any).claimWindowEndsAt : null,
       lastClaim: (parsed as any).lastClaim || null,
-      version: Number((parsed as any).version || 1),
       updatedAt: Date.now(),
     });
     return merged;
   } catch {
-    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now(), version: 1 });
+    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
     await saveState(seeded);
     return seeded;
   }
 }
 
 export async function saveState(state: GameState): Promise<GameState> {
-  const next = withRecalc({
-    ...state,
-    version: Number.isFinite((state as any).version) ? (state.version || 0) + 1 : 1,
-    updatedAt: Date.now(),
-  });
+  const next = withRecalc({ ...state, updatedAt: Date.now() });
 
   if (!hasUpstash()) {
     memoryState = next;
     return next;
   }
 
-  await upstashPipeline([["SET", GAME_STATE_KEY, JSON.stringify(next)]]);
+  await upstashPipeline([["SET", KEY, JSON.stringify(next)]]);
   return next;
 }
 
 export function makeNewGame(prev: GameState): GameState {
+  // Roll current game jackpot into progressive ONCE per gameId
+  const pots = derivePots(prev);
+  const shouldRoll = prev.lastProgressiveRollGameId !== prev.gameId;
+  const rolledProgressive = shouldRoll
+    ? (prev.progressiveJackpotSol || 0) + (pots.currentGameJackpotSol || 0)
+    : (prev.progressiveJackpotSol || 0);
+
   return withRecalc({
     ...prev,
+    progressiveJackpotSol: rolledProgressive,
+    lastProgressiveRollGameId: prev.gameId,
     gameId: `game-${prev.gameNumber}-${Date.now()}`,
     status: "OPEN",
     calledNumbers: [],
@@ -210,9 +205,6 @@ export function makeNewGame(prev: GameState): GameState {
     claimWindowEndsAt: null,
     lastClaim: null,
     currentGameJackpotSol: 0,
-    version: (prev.version || 0) + 1,
     updatedAt: Date.now(),
   });
 }
-
-

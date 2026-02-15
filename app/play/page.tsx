@@ -440,12 +440,6 @@ export default function PlayPage() {
 
   // Entry pricing
   const [entryFeeSol, setEntryFeeSol] = useState<number>(0.05);
-  // Keep the admin fee input editable without poll-overwriting while typing
-  const [entryFeeDraft, setEntryFeeDraft] = useState<string>("0.05");
-  const [isEditingEntryFee, setIsEditingEntryFee] = useState<boolean>(false);
-  const [isSavingEntryFee, setIsSavingEntryFee] = useState<boolean>(false);
-  const entryFeeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastServerEntryFeeRef = useRef<number>(0.05);
 
   // Server-derived pots (cumulative across all players)
   const [serverEntriesCount, setServerEntriesCount] = useState<number>(0);
@@ -538,11 +532,7 @@ export default function PlayPage() {
         setGameNumber(s.gameNumber);
         setGameType(s.gameType);
         setStatus(s.status);
-        lastServerEntryFeeRef.current = s.entryFeeSol;
         setEntryFeeSol(s.entryFeeSol);
-        if (!isEditingEntryFee) {
-          setEntryFeeDraft(String(s.entryFeeSol));
-        }
         setCalledNumbers(s.calledNumbers || []);
         setWinners((s.winners || []).map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
 
@@ -579,48 +569,7 @@ export default function PlayPage() {
       stopped = true;
       if (timer) clearInterval(timer);
     };
-  }, [walletAddress, isEditingEntryFee]);
-
-  // Admin: persist entry fee to backend (so it doesn't snap back on poll)
-  const commitEntryFeeSol = async (raw: string) => {
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n <= 0) return;
-
-    // Keep within a sane range (protect against accidental huge values)
-    const fee = clamp(n, 0, 100);
-
-    // If it's already the server value (within rounding), don't spam
-    if (Math.abs(fee - lastServerEntryFeeRef.current) < 0.000001) return;
-
-    setIsSavingEntryFee(true);
-    try {
-      await fetchJson(`/api/game/admin`, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "SET_FEE",
-          // send multiple field names for backward compatibility
-          entryFeeSol: fee,
-          feeSol: fee,
-          fee: fee,
-          buyInSol: fee,
-          buyIn: fee,
-        }),
-      });
-    } catch (e) {
-      console.error("SET_FEE failed:", e);
-    } finally {
-      setIsSavingEntryFee(false);
-    }
-  };
-
-  const scheduleEntryFeeCommit = (raw: string) => {
-    if (entryFeeSaveTimerRef.current) clearTimeout(entryFeeSaveTimerRef.current);
-    entryFeeSaveTimerRef.current = setTimeout(() => {
-      commitEntryFeeSol(raw);
-    }, 650);
-  };
-
-
+  }, [walletAddress]);
 
 
 
@@ -880,6 +829,8 @@ await confirmSignatureByPolling(connection, sig, 60_000);
             signature: sig,
             totalSol,
             cardIds: selectedCards.map((c) => c.id),
+            cardTypes: selectedCards.map((c) => c.type),
+            isFounders: selectedCards.map((c) => c.type === "FOUNDERS"),
           }),
         });
       } catch (e: any) {
@@ -1290,25 +1241,9 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                       type="number"
                       step="0.001"
                       min="0"
-                      value={isEditingEntryFee ? entryFeeDraft : String(entryFeeSol)}
-                      disabled={status === "LOCKED" || status === "PAUSED" || isSavingEntryFee}
-                      onFocus={() => {
-                        setIsEditingEntryFee(true);
-                        setEntryFeeDraft(String(entryFeeSol));
-                      }}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setEntryFeeDraft(v);
-                        // Save shortly after the user stops changing it (works with arrows while focused)
-                        scheduleEntryFeeCommit(v);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                      }}
-                      onBlur={() => {
-                        setIsEditingEntryFee(false);
-                        commitEntryFeeSol(entryFeeDraft);
-                      }}
+                      value={entryFeeSol}
+                      disabled={status === "LOCKED" || status === "PAUSED"}
+                      onChange={(e) => setEntryFeeSol(clamp(parseFloat(e.target.value || "0"), 0, 100))}
                       className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                     />
                     <span className="text-sm text-slate-600">per card</span>
