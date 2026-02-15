@@ -1378,5 +1378,3 @@ await confirmSignatureByPolling(connection, sig, 60_000);
     </main>
   );
 }
-
-
