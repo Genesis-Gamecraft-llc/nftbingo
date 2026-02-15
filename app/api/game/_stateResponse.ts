@@ -42,3 +42,5 @@ export async function buildStateResponse(state: GameState, wallet?: string) {
       : undefined,
   };
 }
+
+
