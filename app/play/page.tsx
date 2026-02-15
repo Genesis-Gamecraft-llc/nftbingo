@@ -518,46 +518,12 @@ export default function PlayPage() {
   const wallet = useWallet();
   const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
 
-  // ✅ Sync game state for everyone (server truth)
-  useEffect(() => {
-    let timer: any = null;
-    let stopped = false;
 
-    const tick = async () => {
-      try {
-        const qs = walletAddress ? `?wallet=${encodeURIComponent(walletAddress)}` : "";
-        const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`);
-        if (stopped) return;
 
-        setGameNumber(s.gameNumber);
-        setGameType(s.gameType);
-        setStatus(s.status);
-        setEntryFeeSol(s.entryFeeSol);
-        setCalledNumbers(s.calledNumbers || []);
-        setWinners((s.winners || []).map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
-
-        setServerEntriesCount(s.entriesCount || 0);
-        setServerTotalPotSol(s.totalPotSol || 0);
-        setServerPlayerPotSol(s.playerPotSol || 0);
-        setServerFoundersPotSol(s.foundersPotSol || 0);
-        setServerFoundersBonusSol(s.foundersBonusSol || 0);
-        setServerJackpotSol(s.jackpotSol || 0);
-        setServerProgressiveJackpotSol(s.progressiveJackpotSol || 0);
-        setServerCurrentGameJackpotSol(s.currentGameJackpotSol || 0);
-
-        setClaimWindowEndsAt(s.claimWindowEndsAt ?? null);
-        setLastClaim(s.lastClaim ?? null);
-
-        if (s.my?.enteredCardIds) {
-          setEnteredCardIds(s.my.enteredCardIds);
-          setLastEntrySig(String(s.my.lastSig || ""));
-          if (typeof s.my.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol);
-          setEntriesLocked((s.my.enteredCardIds?.length || 0) > 0);
-        } else {
-          setEnteredCardIds([]);
-          setEntriesLocked(false);
-        }
-      } catch {
+  // Apply server truth to local UI state (used by poll + admin actions)
+  const applyServerState = (s: ServerGameState) => {
+            applyServerState(s);
+} catch {
         // ignore poll failures
       }
     };
@@ -648,75 +614,34 @@ export default function PlayPage() {
   }
 
   // Admin actions (MVP local)
-  function adminNewGame() {
-    setStatus("OPEN");
-    setCalledNumbers([]);
-    setSelectedCards([]);
-    setEnteredCards([]); // ✅ reset paid entries
-    setEntriesLocked(false);
-    setLastEntrySig("");
-    setLastEntryTotalSol(0);
-
-    setWinners([]);
-    setClaimResult(null);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
+  async function adminNewGame() {
+  await postAdmin("NEW_GAME");
   }
 
-  function adminLockGameStart() {
-    setStatus("LOCKED");
-    setClaimResult(null);
-    setWinners([]);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
+  async function adminLockGameStart() {
+  await postAdmin("LOCK");
   }
 
-  function adminPauseToggle() {
-    if (status === "LOCKED") setStatus("PAUSED");
-    else if (status === "PAUSED") setStatus("LOCKED");
+  async function adminPauseToggle() {
+  await postAdmin("PAUSE_TOGGLE");
   }
 
-  function adminEndGame() {
-    setStatus("ENDED");
-    closeClaimWindow();
+  async function adminEndGame() {
+  await postAdmin("END");
   }
 
-  function adminCloseAndIncrement() {
-    setGameNumber((n) => n + 1);
-    setStatus("CLOSED");
-    setCalledNumbers([]);
-    setSelectedCards([]);
-    setEnteredCards([]); // ✅ reset paid entries
-    setEntriesLocked(false);
-    setLastEntrySig("");
-    setLastEntryTotalSol(0);
-
-    setWinners([]);
-    setClaimResult(null);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
+  async function adminCloseAndIncrement() {
+  await postAdmin("CLOSE_NEXT");
   }
 
-  function adminCallNumber(n: number) {
-    if (status !== "LOCKED" && status !== "PAUSED") return;
-    setCalledNumbers((prev) => {
-      const next = uniquePush(prev, n);
-      if (claimWindowOpenAt) closeClaimWindow(); // next number called closes window
-      return next;
-    });
-    setClaimResult(null);
+  async function adminCallNumber(n: number) {
+  if (status !== "LOCKED" && status !== "PAUSED") return;
+  await postAdmin("CALL_NUMBER", { number: n });
   }
 
-  function adminUndo() {
-    if (status !== "LOCKED" && status !== "PAUSED") return;
-    setCalledNumbers((prev) => removeLast(prev));
-    setClaimResult(null);
+  async function adminUndo() {
+  if (status !== "LOCKED" && status !== "PAUSED") return;
+  await postAdmin("UNDO_LAST");
   }
 
   // Player actions
@@ -1240,8 +1165,14 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                       step="0.001"
                       min="0"
                       value={entryFeeSol}
-                      disabled={status === "LOCKED" || status === "PAUSED"}
+                      disabled={status !== "CLOSED"}
                       onChange={(e) => setEntryFeeSol(clamp(parseFloat(e.target.value || "0"), 0, 100))}
+                      onBlur={() => postAdmin("SET_FEE", { entryFeeSol })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          (e.target as HTMLInputElement).blur();
+                        }
+                      }}
                       className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                     />
                     <span className="text-sm text-slate-600">per card</span>
@@ -1253,8 +1184,12 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                   <div className="text-sm text-slate-600">Game Type</div>
                   <select
                     value={gameType}
-                    disabled={status === "LOCKED" || status === "PAUSED"}
-                    onChange={(e) => setGameType(e.target.value as GameType)}
+                    disabled={status !== "CLOSED"}
+                    onChange={(e) => {
+                      const v = e.target.value as GameType;
+                      setGameType(v);
+                      postAdmin("SET_TYPE", { gameType: v });
+                    }}
                     className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                   >
                     <option value="STANDARD">Standard</option>

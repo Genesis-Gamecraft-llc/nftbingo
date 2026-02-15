@@ -17,6 +17,85 @@ async function isAdminCookie() {
   return c === "1";
 }
 
+function normalizeAdminAction(input: string): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  // Convert camelCase / kebab / spaced into SCREAMING_SNAKE_CASE
+  const upper = raw
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .replace(/[\s-]+/g, "_")
+    .toUpperCase();
+
+  switch (upper) {
+    // Buy-in aliases -> SET_FEE
+    case "SET_BUYIN":
+    case "SET_BUY_IN":
+    case "SET_BUYIN_USD":
+    case "SET_BUY_IN_USD":
+    case "SET_BUYIN_SOL":
+    case "SET_BUY_IN_SOL":
+    case "SET_ENTRYFEE":
+    case "SET_ENTRY_FEE":
+    case "SET_ENTRY_FEE_SOL":
+    case "SET_FEE_SOL":
+      return "SET_FEE";
+
+    // Game type aliases
+    case "SET_GAMETYPE":
+    case "SET_GAME_TYPE":
+      return "SET_TYPE";
+
+    // Open aliases (we treat as NEW_GAME because opening a round resets entries/called numbers)
+    case "OPEN":
+    case "OPEN_GAME":
+    case "OPEN_SIGNUPS":
+    case "OPEN_GAME_SIGNUPS":
+      return "NEW_GAME";
+
+    // Lock aliases
+    case "LOCK_START":
+    case "LOCK_GAME":
+    case "START":
+    case "START_GAME":
+      return "LOCK";
+
+    // Pause aliases
+    case "PAUSE":
+    case "RESUME":
+    case "PAUSE_GAME":
+    case "RESUME_GAME":
+      return "PAUSE_TOGGLE";
+
+    // End aliases
+    case "END_GAME":
+    case "STOP":
+    case "STOP_GAME":
+      return "END";
+
+    // Close/next aliases
+    case "CLOSE":
+    case "CLOSE_AND_NEXT":
+    case "NEXT_GAME":
+      return "CLOSE_NEXT";
+
+    // Undo aliases
+    case "UNDO":
+    case "UNDO_CALL":
+    case "UNDO_LAST_CALL":
+      return "UNDO_LAST";
+
+    // Call aliases
+    case "CALL":
+    case "CALLNUMBER":
+    case "CALL_NUMBER":
+      return "CALL_NUMBER";
+
+    default:
+      return upper;
+  }
+}
+
+
 export const runtime = "nodejs";
 
 const ADMIN_LUA = `
@@ -155,7 +234,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const action = String(body?.action || "");
+  const action = normalizeAdminAction(String(body?.action || ""));
 
   if (hasUpstash()) {
     const now = Date.now();
@@ -168,7 +247,7 @@ export async function POST(req: Request) {
           action,
           typeof body?.number === "number" || typeof body?.number === "string" ? body.number : "",
           typeof body?.gameType === "string" ? body.gameType : "",
-          typeof body?.entryFeeSol === "number" || typeof body?.entryFeeSol === "string" ? body.entryFeeSol : "",
+          typeof (body?.entryFeeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn) === "number" || typeof (body?.entryFeeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn) === "string" ? (body.entryFeeSol ?? body.fee ?? body.buyInSol ?? body.buyInUsd ?? body.buyIn) : "",
           now,
         ]
       )) as string;
@@ -238,7 +317,7 @@ export async function POST(req: Request) {
     }
 
     case "SET_FEE": {
-      const feeRaw = body?.entryFeeSol;
+      const feeRaw = body?.entryFeeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn;
       const fee = typeof feeRaw === "string" ? Number(feeRaw) : Number(feeRaw);
       if (!Number.isFinite(fee) || fee <= 0 || fee >= 100) return NextResponse.json({ error: "Invalid entry fee" }, { status: 400 });
       if (next.status !== "OPEN" && next.status !== "CLOSED") return NextResponse.json({ error: "Can't change entry fee during a live game" }, { status: 400 });
