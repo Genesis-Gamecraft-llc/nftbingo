@@ -50,8 +50,17 @@ export async function POST(req: Request) {
   const signature = String(body?.signature || "");
   const totalSol = Number(body?.totalSol);
   const cardIds = Array.isArray(body?.cardIds) ? body.cardIds.map((x: any) => String(x)) : [];
-  const cardTypes = Array.isArray(body?.cardTypes) ? body.cardTypes.map((x: any) => String(x)) : [];
-  const isFoundersFlags = Array.isArray(body?.isFounders) ? body.isFounders.map((x: any) => Boolean(x)) : [];
+  const cardTypesArr = Array.isArray(body?.cardTypes)
+    ? body.cardTypes.map((x: any) => (String(x).toUpperCase() === "FOUNDERS" ? "FOUNDERS" : "PLAYER"))
+    : [];
+  const cardTypeById = typeof body?.cardTypeById === "object" && body.cardTypeById ? body.cardTypeById : null;
+  const cardTypesById: Record<string, "PLAYER" | "FOUNDERS"> = {};
+  for (let i = 0; i < cardIds.length; i++) {
+    const id = cardIds[i];
+    const tFromMap = cardTypeById && typeof (cardTypeById as any)[id] === "string" ? String((cardTypeById as any)[id]) : "";
+    const t = (cardTypesArr[i] || tFromMap || "PLAYER").toUpperCase();
+    cardTypesById[id] = t === "FOUNDERS" ? "FOUNDERS" : "PLAYER";
+  }
 
   if (!wallet) return NextResponse.json({ error: "Missing wallet" }, { status: 400 });
   if (!signature) return NextResponse.json({ error: "Missing signature" }, { status: 400 });
@@ -95,21 +104,6 @@ export async function POST(req: Request) {
 
   // Prevent replay of same sig
   await markSignatureUsed(signature);
-
-// Optional: persist per-card type so payouts can detect Founders cards
-let cardTypesById: Record<string, "PLAYER" | "FOUNDERS"> | undefined = undefined;
-if (cardTypes.length === cardIds.length) {
-  cardTypesById = {};
-  for (let i = 0; i < cardIds.length; i++) {
-    const t = String(cardTypes[i] || "").toUpperCase();
-    cardTypesById[cardIds[i]] = t === "FOUNDERS" ? "FOUNDERS" : "PLAYER";
-  }
-} else if (isFoundersFlags.length === cardIds.length) {
-  cardTypesById = {};
-  for (let i = 0; i < cardIds.length; i++) {
-    cardTypesById[cardIds[i]] = isFoundersFlags[i] ? "FOUNDERS" : "PLAYER";
-  }
-}
 
   state.entries = state.entries || [];
   state.entries.push({ wallet, cardIds, cardTypesById, signature, totalSol, ts: Date.now() });

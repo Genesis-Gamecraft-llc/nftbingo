@@ -32,10 +32,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "That card already claimed" }, { status: 400 });
   }
 
-  const cardType = (entry as any)?.cardTypesById?.[cardId];
-  const isFounders = String(cardType || "").toUpperCase() === "FOUNDERS";
-
   state.winners = state.winners || [];
+    const isFounders = (() => {
+    const m = (entry as any)?.cardTypesById;
+    const t = m && typeof m === "object" ? String((m as any)[cardId] || "") : "";
+    return t.toUpperCase() === "FOUNDERS";
+  })();
+
   state.winners.push({ cardId, wallet, isFounders, ts: now });
 
   // On first claim, pause and open shared window

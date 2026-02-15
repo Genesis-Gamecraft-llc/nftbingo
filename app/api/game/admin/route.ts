@@ -22,7 +22,10 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const action = String(body?.action || "");
+  let action = String(body?.action || "");
+
+  // Accept a few friendly aliases from UI/console
+  if (action === "RESET_PROGRESSIVE_JACKPOT") action = "RESET_PROGRESSIVE";
 
   const state = await loadState();
   let next = { ...state };
@@ -49,21 +52,7 @@ export async function POST(req: Request) {
       break;
     }
 
-    case "RESET_PROGRESSIVE": {
-      next.progressiveJackpotSol = 0;
-      next.lastProgressiveRollGameId = null as any;
-      break;
-    }
-
     case "CLOSE_NEXT": {
-      // Roll current game jackpot into progressive once per gameId
-      const { derivePots } = await import("../_store");
-      const pots = derivePots(state);
-      if ((state as any).lastProgressiveRollGameId !== state.gameId) {
-        next.progressiveJackpotSol = (state.progressiveJackpotSol || 0) + (pots.currentGameJackpotSol || 0);
-        (next as any).lastProgressiveRollGameId = state.gameId;
-      }
-
       next.gameNumber = (state.gameNumber || 1) + 1;
       next.status = "CLOSED";
       next.calledNumbers = [];
@@ -109,7 +98,7 @@ export async function POST(req: Request) {
     }
 
     case "SET_FEE": {
-      const feeRaw = body?.entryFeeSol ?? body?.feeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyIn;
+      const feeRaw = body?.entryFeeSol ?? body?.feeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn;
       const fee = typeof feeRaw === "string" ? Number(feeRaw) : Number(feeRaw);
 
       if (!Number.isFinite(fee) || fee <= 0 || fee >= 100) {
@@ -125,6 +114,12 @@ export async function POST(req: Request) {
       next.entryFeeSol = Math.round(fee * 1e8) / 1e8;
       break;
     }
+case "RESET_PROGRESSIVE": {
+  // Manual reset: keep current game pots; only reset the carried-over progressive jackpot.
+  next.progressiveJackpotSol = 0;
+  break;
+}
+
 
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });

@@ -2,13 +2,12 @@ import "server-only";
 
 export type GameType = "STANDARD" | "FOUR_CORNERS" | "BLACKOUT";
 export type GameStatus = "CLOSED" | "OPEN" | "LOCKED" | "PAUSED" | "ENDED";
-export type CardType = "PLAYER" | "FOUNDERS";
 
 export type Entry = {
+  // Optional per-card types for payout logic
+  cardTypesById?: Record<string, "PLAYER" | "FOUNDERS">;
   wallet: string;
   cardIds: string[];
-  /** Optional per-card type map for payout logic */
-  cardTypesById?: Record<string, CardType>;
   signature?: string;
   totalSol?: number;
   ts?: number;
@@ -32,10 +31,11 @@ export type GameState = {
   winners: Winner[];
 
   // progressive jackpot
+  // used to ensure we only roll the current game's jackpot into progressive once
+  lastProgressiveRollGameId: string | null;
+
   progressiveJackpotSol: number;
   currentGameJackpotSol: number;
-  /** GameId that has already been rolled into progressiveJackpotSol to avoid double-add */
-  lastProgressiveRollGameId: string | null;
 
   // claim window
   claimWindowEndsAt: number | null;
@@ -56,8 +56,8 @@ const DEFAULT_STATE: GameState = {
   entries: [],
   winners: [],
   progressiveJackpotSol: 0,
-  currentGameJackpotSol: 0,
   lastProgressiveRollGameId: null,
+  currentGameJackpotSol: 0,
   claimWindowEndsAt: null,
   lastClaim: null,
   updatedAt: Date.now(),
@@ -186,17 +186,8 @@ export async function saveState(state: GameState): Promise<GameState> {
 }
 
 export function makeNewGame(prev: GameState): GameState {
-  // Roll current game jackpot into progressive ONCE per gameId
-  const pots = derivePots(prev);
-  const shouldRoll = prev.lastProgressiveRollGameId !== prev.gameId;
-  const rolledProgressive = shouldRoll
-    ? (prev.progressiveJackpotSol || 0) + (pots.currentGameJackpotSol || 0)
-    : (prev.progressiveJackpotSol || 0);
-
   return withRecalc({
     ...prev,
-    progressiveJackpotSol: rolledProgressive,
-    lastProgressiveRollGameId: prev.gameId,
     gameId: `game-${prev.gameNumber}-${Date.now()}`,
     status: "OPEN",
     calledNumbers: [],

@@ -440,6 +440,10 @@ export default function PlayPage() {
 
   // Entry pricing
   const [entryFeeSol, setEntryFeeSol] = useState<number>(0.05);
+  const feeEditingRef = useRef(false);
+  const feeSaveTimerRef = useRef<number | null>(null);
+  const feeLastSentRef = useRef<number>(-1);
+  const typeEditingRef = useRef(false);
 
   // Server-derived pots (cumulative across all players)
   const [serverEntriesCount, setServerEntriesCount] = useState<number>(0);
@@ -518,6 +522,86 @@ export default function PlayPage() {
   const wallet = useWallet();
   const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
 
+
+  const applyServerState = (s: ServerGameState) => {
+    setGameNumber(s.gameNumber);
+    if (!typeEditingRef.current) setGameType(s.gameType);
+    setStatus(s.status);
+    if (!feeEditingRef.current) setEntryFeeSol(s.entryFeeSol);
+    setCalledNumbers(s.calledNumbers || []);
+    setWinners((s.winners || []).map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
+
+    setServerEntriesCount(s.entriesCount || 0);
+    setServerTotalPotSol(s.totalPotSol || 0);
+    setServerPlayerPotSol(s.playerPotSol || 0);
+    setServerFoundersPotSol(s.foundersPotSol || 0);
+    setServerFoundersBonusSol(s.foundersBonusSol || 0);
+    setServerJackpotSol(s.jackpotSol || 0);
+    setServerProgressiveJackpotSol(s.progressiveJackpotSol || 0);
+    setServerCurrentGameJackpotSol(s.currentGameJackpotSol || 0);
+
+    setClaimWindowEndsAt(s.claimWindowEndsAt ?? null);
+    setLastClaim(s.lastClaim ?? null);
+
+    if (s.my?.enteredCardIds) {
+      setEnteredCardIds(s.my.enteredCardIds);
+      setLastEntrySig(String(s.my.lastSig || ""));
+      if (typeof s.my.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol);
+      setEntriesLocked((s.my.enteredCardIds?.length || 0) > 0);
+    } else {
+      setEnteredCardIds([]);
+      setEntriesLocked(false);
+    }
+  };
+
+  const postAdmin = async (body: any) => {
+    const res = await fetchJson<ServerGameState>("/api/game/admin", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    applyServerState(res);
+    return res;
+  };
+
+  const queueFeeSave = (nextFee: number, immediate = false) => {
+    // Avoid spamming identical values
+    if (Number.isFinite(nextFee) && feeLastSentRef.current === nextFee && !immediate) return;
+
+    if (feeSaveTimerRef.current) {
+      window.clearTimeout(feeSaveTimerRef.current);
+      feeSaveTimerRef.current = null;
+    }
+
+    const run = async () => {
+      try {
+        feeLastSentRef.current = nextFee;
+        await postAdmin({
+          action: "SET_FEE",
+          // send multiple aliases so backend can't miss it
+          entryFeeSol: nextFee,
+          feeSol: nextFee,
+          fee: nextFee,
+          buyInSol: nextFee,
+          buyIn: nextFee,
+        });
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to set entry fee." });
+      }
+    };
+
+    if (immediate) {
+      void run();
+      return;
+    }
+
+    feeSaveTimerRef.current = window.setTimeout(() => {
+      feeSaveTimerRef.current = null;
+      void run();
+    }, 650);
+  };
+
+
+
   // ✅ Sync game state for everyone (server truth)
   useEffect(() => {
     let timer: any = null;
@@ -529,34 +613,7 @@ export default function PlayPage() {
         const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`);
         if (stopped) return;
 
-        setGameNumber(s.gameNumber);
-        setGameType(s.gameType);
-        setStatus(s.status);
-        setEntryFeeSol(s.entryFeeSol);
-        setCalledNumbers(s.calledNumbers || []);
-        setWinners((s.winners || []).map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
-
-        setServerEntriesCount(s.entriesCount || 0);
-        setServerTotalPotSol(s.totalPotSol || 0);
-        setServerPlayerPotSol(s.playerPotSol || 0);
-        setServerFoundersPotSol(s.foundersPotSol || 0);
-        setServerFoundersBonusSol(s.foundersBonusSol || 0);
-        setServerJackpotSol(s.jackpotSol || 0);
-        setServerProgressiveJackpotSol(s.progressiveJackpotSol || 0);
-        setServerCurrentGameJackpotSol(s.currentGameJackpotSol || 0);
-
-        setClaimWindowEndsAt(s.claimWindowEndsAt ?? null);
-        setLastClaim(s.lastClaim ?? null);
-
-        if (s.my?.enteredCardIds) {
-          setEnteredCardIds(s.my.enteredCardIds);
-          setLastEntrySig(String(s.my.lastSig || ""));
-          if (typeof s.my.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol);
-          setEntriesLocked((s.my.enteredCardIds?.length || 0) > 0);
-        } else {
-          setEnteredCardIds([]);
-          setEntriesLocked(false);
-        }
+        applyServerState(s);
       } catch {
         // ignore poll failures
       }
@@ -647,79 +704,86 @@ export default function PlayPage() {
     claimWindowTimer.current = null;
   }
 
-  // Admin actions (MVP local)
-  function adminNewGame() {
-    setStatus("OPEN");
-    setCalledNumbers([]);
-    setSelectedCards([]);
-    setEnteredCards([]); // ✅ reset paid entries
-    setEntriesLocked(false);
-    setLastEntrySig("");
-    setLastEntryTotalSol(0);
+      // Admin actions (server-backed)
+    async function adminNewGame() {
+      try {
+        await postAdmin({ action: "NEW_GAME" });
+        setClaimResult(null);
+        closeClaimWindow();
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to open game." });
+      }
+    }
 
-    setWinners([]);
-    setClaimResult(null);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
-  }
+    async function adminLockGameStart() {
+      try {
+        await postAdmin({ action: "LOCK" });
+        setClaimResult(null);
+        closeClaimWindow();
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to lock/start game." });
+      }
+    }
 
-  function adminLockGameStart() {
-    setStatus("LOCKED");
-    setClaimResult(null);
-    setWinners([]);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
-  }
+    async function adminPauseToggle() {
+      try {
+        await postAdmin({ action: "PAUSE_TOGGLE" });
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to pause/resume." });
+      }
+    }
 
-  function adminPauseToggle() {
-    if (status === "LOCKED") setStatus("PAUSED");
-    else if (status === "PAUSED") setStatus("LOCKED");
-  }
+    async function adminEndGame() {
+      try {
+        await postAdmin({ action: "END" });
+        closeClaimWindow();
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to end game." });
+      }
+    }
 
-  function adminEndGame() {
-    setStatus("ENDED");
-    closeClaimWindow();
-  }
+    async function adminCloseAndIncrement() {
+      try {
+        await postAdmin({ action: "CLOSE_NEXT" });
+        closeClaimWindow();
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to close & next." });
+      }
+    }
 
-  function adminCloseAndIncrement() {
-    setGameNumber((n) => n + 1);
-    setStatus("CLOSED");
-    setCalledNumbers([]);
-    setSelectedCards([]);
-    setEnteredCards([]); // ✅ reset paid entries
-    setEntriesLocked(false);
-    setLastEntrySig("");
-    setLastEntryTotalSol(0);
 
-    setWinners([]);
-    setClaimResult(null);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
-  }
+    async function adminResetProgressive() {
+      try {
+        await postAdmin({ action: "RESET_PROGRESSIVE" });
+        setClaimResult(null);
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to reset progressive jackpot." });
+      }
+    }
 
-  function adminCallNumber(n: number) {
-    if (status !== "LOCKED" && status !== "PAUSED") return;
-    setCalledNumbers((prev) => {
-      const next = uniquePush(prev, n);
-      if (claimWindowOpenAt) closeClaimWindow(); // next number called closes window
-      return next;
-    });
-    setClaimResult(null);
-  }
 
-  function adminUndo() {
-    if (status !== "LOCKED" && status !== "PAUSED") return;
-    setCalledNumbers((prev) => removeLast(prev));
-    setClaimResult(null);
-  }
+    async function adminCallNumber(n: number) {
+      if (status !== "LOCKED" && status !== "PAUSED") return;
+      try {
+        await postAdmin({ action: "CALL_NUMBER", number: n });
+        if (claimWindowOpenAt) closeClaimWindow();
+        setClaimResult(null);
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to call number." });
+      }
+    }
 
-  // Player actions
+    async function adminUndo() {
+      if (status !== "LOCKED" && status !== "PAUSED") return;
+      try {
+        await postAdmin({ action: "UNDO_LAST" });
+        setClaimResult(null);
+      } catch (e: any) {
+        setClaimResult({ result: "REJECTED", message: e?.message || "Failed to undo last." });
+      }
+    }
+
+// Player actions
   function toggleSelectCard(card: BingoCard) {
     if (status !== "OPEN") return;
     if (entriesLocked) return; // ✅ can’t change after paying
@@ -829,8 +893,6 @@ await confirmSignatureByPolling(connection, sig, 60_000);
             signature: sig,
             totalSol,
             cardIds: selectedCards.map((c) => c.id),
-            cardTypes: selectedCards.map((c) => c.type),
-            isFounders: selectedCards.map((c) => c.type === "FOUNDERS"),
           }),
         });
       } catch (e: any) {
@@ -961,9 +1023,9 @@ await confirmSignatureByPolling(connection, sig, 60_000);
       <div className="max-w-6xl mx-auto px-4 py-10">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h1 className="text-4xl font-extrabold text-slate-900">NFTBingo — Play</h1>
+            <h1 className="text-4xl font-extrabold text-slate-900">Welcome to the NFTBingo game page</h1>
             <div className="text-sm text-slate-600 mt-1">
-              Game #{gameNumber} • <span className="font-semibold">{gameTypeLabel(gameType)}</span> • Status:{" "}
+              Game #{gameNumber} • Game Type: <span className="font-semibold">{gameTypeLabel(gameType)}</span> • Game Status:{" "}
               <span className="font-semibold">{status}</span>
             </div>
           </div>
@@ -985,7 +1047,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
           <div className="md:col-span-2 bg-white rounded-2xl shadow p-6 md:p-8">
             <h2 className="text-2xl font-bold text-slate-900">Join & Play</h2>
             <p className="text-slate-700 mt-1">
-              Entry fee is set by the admin per game. You can enter up to {maxCards} cards.
+              Entry fees are set before the game starts. You can enter up to {maxCards} cards per game with additional entry fees for each card entered.
             </p>
 
             <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 flex items-center justify-between">
@@ -1006,7 +1068,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Select your card(s)</h3>
               <p className="text-sm text-slate-600">
-                Cards load from your connected wallet (Founders / Players). If your wallet is not connected, demo cards
+                Connect your wallet on top of the page. Owned Players or Founders Series cards will be shown here. Choose the ones you wish to play with, pay your entry fee, and they’ll be locked in for this game. You can get Founders or Players Series cards at NFTBingo.net/mint on our site.
                 are shown.
               </p>
 
@@ -1076,7 +1138,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
               </button>
 
               <div className="text-sm text-slate-600">
-                Status must be <span className="font-semibold text-slate-900">OPEN</span> to enter.
+                Games can only be entered when they are showing the status as <span className="font-semibold text-slate-900">OPEN</span>.
                 {lastEntrySig ? (
                   <div className="text-xs text-slate-500 mt-1">
                     Last entry: {formatSol(lastEntryTotalSol)} SOL • Tx:{" "}
@@ -1091,11 +1153,11 @@ await confirmSignatureByPolling(connection, sig, 60_000);
               {/* Card preview */}
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-2">Your card view</h3>
-                <p className="text-sm text-slate-600 mb-4">Numbers auto-mark as they’re called. Free space is always marked.</p>
+                <p className="text-sm text-slate-600 mb-4">Your card's numbers will be auto-marked for you as they are called. Free space always counts as marked. The Call Bingo button will unlock when your cards have the correct pattern based on the numbers drawn.</p>
 
                 {activeEntries.length === 0 ? (
                   <div className="border border-dashed border-slate-300 rounded-xl p-6 text-slate-600 bg-slate-50">
-                    Select card(s) above to see your grid here.
+                    Select card(s) above to see your grid(s) here.
                   </div>
                 ) : (
                   <CardCarousel cards={activeEntries} calledSet={calledSet} gameType={gameType} />
@@ -1107,7 +1169,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                 <h3 className="text-lg font-semibold text-slate-900 mb-2">Called numbers</h3>
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                   <div className="flex items-center justify-between">
-                    <div className="text-sm text-slate-600">Last called</div>
+                    <div className="text-sm text-slate-600">Last # called</div>
                     <div className="text-2xl font-extrabold text-slate-900">
                       {calledNumbers.length ? calledNumbers[calledNumbers.length - 1] : "—"}
                     </div>
@@ -1138,7 +1200,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                         {claimWindowOpenAt ? `${claimWindowSecondsLeft}s` : "—"}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1">Closes on next called number or 60s.</div>
+                    <div className="text-xs text-slate-500 mt-1">Claim window closes after the next number is called or 60 seconds after a winning Bingo has been verified.</div>
                   </div>
 
                   {/* Claim button */}
@@ -1243,7 +1305,27 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                       min="0"
                       value={entryFeeSol}
                       disabled={status === "LOCKED" || status === "PAUSED"}
-                      onChange={(e) => setEntryFeeSol(clamp(parseFloat(e.target.value || "0"), 0, 100))}
+                      onFocus={() => {
+                        feeEditingRef.current = true;
+                      }}
+                      onBlur={(e) => {
+                        feeEditingRef.current = false;
+                        const v = clamp(parseFloat((e.target as HTMLInputElement).value || "0"), 0, 100);
+                        setEntryFeeSol(v);
+                        queueFeeSave(v, true);
+                      }}
+                      onChange={(e) => {
+                        feeEditingRef.current = true;
+                        const v = clamp(parseFloat(e.target.value || "0"), 0, 100);
+                        setEntryFeeSol(v);
+                        // Save shortly after changes so arrows/typing persist even without blur
+                        if (status === "OPEN" || status === "CLOSED") queueFeeSave(v);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
+                      }}
                       className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                     />
                     <span className="text-sm text-slate-600">per card</span>
@@ -1256,7 +1338,21 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                   <select
                     value={gameType}
                     disabled={status === "LOCKED" || status === "PAUSED"}
-                    onChange={(e) => setGameType(e.target.value as GameType)}
+                    onFocus={() => {
+                     typeEditingRef.current = true;
+                   }}
+                   onBlur={() => {
+                     typeEditingRef.current = false;
+                   }}
+                   onChange={async (e) => {
+                     const next = e.target.value as GameType;
+                     setGameType(next);
+                     try {
+                       await postAdmin({ action: "SET_TYPE", gameType: next });
+                     } catch (err: any) {
+                       setClaimResult({ result: "REJECTED", message: err?.message || "Failed to set game type." });
+                     }
+                   }}
                     className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                   >
                     <option value="STANDARD">Standard</option>
@@ -1324,6 +1420,21 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                   >
                     Close & Next Game (+1)
                   </button>
+
+
+                  <button
+                    type="button"
+                    onClick={adminResetProgressive}
+                    disabled={status === "LOCKED" || status === "PAUSED"}
+                    className={[
+                      "rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 font-semibold text-rose-800 hover:bg-rose-100",
+                      status === "LOCKED" || status === "PAUSED" ? "opacity-50 cursor-not-allowed" : "",
+                    ].join(" ")}
+                    title="Resets the Progressive Jackpot back to 0 (does not affect current game pots)."
+                  >
+                    Reset Progressive Jackpot
+                  </button>
+
                 </div>
               </div>
 
@@ -1374,7 +1485,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
         </div>
 
         <div className="mt-10 text-xs text-slate-500">
-          MVP note: Pots only increase after “Pay & Enter” confirms on-chain. Next step is wiring backend entry records + payouts.
+          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.0-alpha
         </div>
       </div>
     </main>
