@@ -431,11 +431,6 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-async function postAdminAction<T>(body: any): Promise<T> {
-  return fetchJson<T>("/api/game/admin", { method: "POST", body: JSON.stringify(body) });
-}
-
-
 
 export default function PlayPage() {
   // Game config
@@ -445,6 +440,12 @@ export default function PlayPage() {
 
   // Entry pricing
   const [entryFeeSol, setEntryFeeSol] = useState<number>(0.05);
+  // Keep the admin fee input editable without poll-overwriting while typing
+  const [entryFeeDraft, setEntryFeeDraft] = useState<string>("0.05");
+  const [isEditingEntryFee, setIsEditingEntryFee] = useState<boolean>(false);
+  const [isSavingEntryFee, setIsSavingEntryFee] = useState<boolean>(false);
+  const entryFeeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastServerEntryFeeRef = useRef<number>(0.05);
 
   // Server-derived pots (cumulative across all players)
   const [serverEntriesCount, setServerEntriesCount] = useState<number>(0);
@@ -488,8 +489,6 @@ export default function PlayPage() {
 
   // Admin UI is gated by cookie set by /admin
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminSaving, setAdminSaving] = useState(false);
-
   useEffect(() => {
     let alive = true;
     fetch("/api/admin/me", { cache: "no-store" })
@@ -525,36 +524,7 @@ export default function PlayPage() {
   const wallet = useWallet();
   const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
 
-  
-  async function setEntryFeeOnServer(feeSol: number) {
-    if (!isAdmin) return;
-    setAdminSaving(true);
-    try {
-      const resp = await postAdminAction<any>({ action: "SET_FEE", entryFeeSol: feeSol });
-      if (typeof resp?.entryFeeSol === "number") setEntryFeeSol(resp.entryFeeSol);
-    } catch (e: any) {
-      console.error(e);
-      setClaimResult({ result: "REJECTED", message: String(e?.message || e) });
-    } finally {
-      setAdminSaving(false);
-    }
-  }
-
-  async function setGameTypeOnServer(nextType: string) {
-    if (!isAdmin) return;
-    setAdminSaving(true);
-    try {
-      const resp = await postAdminAction<any>({ action: "SET_TYPE", gameType: nextType });
-      if (resp?.gameType) setGameType(resp.gameType);
-    } catch (e: any) {
-      console.error(e);
-      setClaimResult({ result: "REJECTED", message: String(e?.message || e) });
-    } finally {
-      setAdminSaving(false);
-    }
-  }
-
-// ✅ Sync game state for everyone (server truth)
+  // ✅ Sync game state for everyone (server truth)
   useEffect(() => {
     let timer: any = null;
     let stopped = false;
@@ -568,7 +538,11 @@ export default function PlayPage() {
         setGameNumber(s.gameNumber);
         setGameType(s.gameType);
         setStatus(s.status);
+        lastServerEntryFeeRef.current = s.entryFeeSol;
         setEntryFeeSol(s.entryFeeSol);
+        if (!isEditingEntryFee) {
+          setEntryFeeDraft(String(s.entryFeeSol));
+        }
         setCalledNumbers(s.calledNumbers || []);
         setWinners((s.winners || []).map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
 
@@ -605,7 +579,48 @@ export default function PlayPage() {
       stopped = true;
       if (timer) clearInterval(timer);
     };
-  }, [walletAddress]);
+  }, [walletAddress, isEditingEntryFee]);
+
+  // Admin: persist entry fee to backend (so it doesn't snap back on poll)
+  const commitEntryFeeSol = async (raw: string) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return;
+
+    // Keep within a sane range (protect against accidental huge values)
+    const fee = clamp(n, 0, 100);
+
+    // If it's already the server value (within rounding), don't spam
+    if (Math.abs(fee - lastServerEntryFeeRef.current) < 0.000001) return;
+
+    setIsSavingEntryFee(true);
+    try {
+      await fetchJson(`/api/game/admin`, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "SET_FEE",
+          // send multiple field names for backward compatibility
+          entryFeeSol: fee,
+          feeSol: fee,
+          fee: fee,
+          buyInSol: fee,
+          buyIn: fee,
+        }),
+      });
+    } catch (e) {
+      console.error("SET_FEE failed:", e);
+    } finally {
+      setIsSavingEntryFee(false);
+    }
+  };
+
+  const scheduleEntryFeeCommit = (raw: string) => {
+    if (entryFeeSaveTimerRef.current) clearTimeout(entryFeeSaveTimerRef.current);
+    entryFeeSaveTimerRef.current = setTimeout(() => {
+      commitEntryFeeSol(raw);
+    }, 650);
+  };
+
+
 
 
 
@@ -1275,17 +1290,24 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                       type="number"
                       step="0.001"
                       min="0"
-                      value={entryFeeSol}
-                      disabled={!isAdmin || adminSaving || status === "LOCKED" || status === "PAUSED" || status === "ENDED"}
-                      onChange={(e) => setEntryFeeSol(clamp(parseFloat(e.target.value || "0"), 0, 100))}
-                      onBlur={() => {
-                        if (!isAdmin) return;
-                        if (status === "OPEN" || status === "CLOSED") void setEntryFeeOnServer(entryFeeSol);
+                      value={isEditingEntryFee ? entryFeeDraft : String(entryFeeSol)}
+                      disabled={status === "LOCKED" || status === "PAUSED" || isSavingEntryFee}
+                      onFocus={() => {
+                        setIsEditingEntryFee(true);
+                        setEntryFeeDraft(String(entryFeeSol));
+                      }}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setEntryFeeDraft(v);
+                        // Save shortly after the user stops changing it (works with arrows while focused)
+                        scheduleEntryFeeCommit(v);
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          (e.target as HTMLInputElement).blur();
-                        }
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
+                      onBlur={() => {
+                        setIsEditingEntryFee(false);
+                        commitEntryFeeSol(entryFeeDraft);
                       }}
                       className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                     />
@@ -1298,12 +1320,8 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                   <div className="text-sm text-slate-600">Game Type</div>
                   <select
                     value={gameType}
-                    disabled={!isAdmin || adminSaving || status === "LOCKED" || status === "PAUSED" || status === "ENDED"}
-                    onChange={(e) => {
-                      const t = e.target.value;
-                      setGameType(t as GameType);
-                      if (status === "OPEN" || status === "CLOSED") void setGameTypeOnServer(t);
-                    }}
+                    disabled={status === "LOCKED" || status === "PAUSED"}
+                    onChange={(e) => setGameType(e.target.value as GameType)}
                     className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                   >
                     <option value="STANDARD">Standard</option>

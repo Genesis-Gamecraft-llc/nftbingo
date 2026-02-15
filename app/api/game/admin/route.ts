@@ -247,7 +247,7 @@ export async function POST(req: Request) {
           action,
           typeof body?.number === "number" || typeof body?.number === "string" ? body.number : "",
           typeof body?.gameType === "string" ? body.gameType : "",
-          typeof (body?.entryFeeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn) === "number" || typeof (body?.entryFeeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn) === "string" ? (body.entryFeeSol ?? body.fee ?? body.buyInSol ?? body.buyInUsd ?? body.buyIn) : "",
+          typeof (body?.entryFeeSol ?? body?.feeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn) === "number" || typeof (body?.entryFeeSol ?? body?.feeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn) === "string" ? (body.entryFeeSol ?? body.feeSol ?? body.fee ?? body.buyInSol ?? body.buyInUsd ?? body.buyIn) : "",
           now,
         ]
       )) as string;
@@ -317,7 +317,7 @@ export async function POST(req: Request) {
     }
 
     case "SET_FEE": {
-      const feeRaw = body?.entryFeeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn;
+      const feeRaw = body?.entryFeeSol ?? body?.feeSol ?? body?.fee ?? body?.buyInSol ?? body?.buyInUsd ?? body?.buyIn;
       const fee = typeof feeRaw === "string" ? Number(feeRaw) : Number(feeRaw);
       if (!Number.isFinite(fee) || fee <= 0 || fee >= 100) return NextResponse.json({ error: "Invalid entry fee" }, { status: 400 });
       if (next.status !== "OPEN" && next.status !== "CLOSED") return NextResponse.json({ error: "Can't change entry fee during a live game" }, { status: 400 });
