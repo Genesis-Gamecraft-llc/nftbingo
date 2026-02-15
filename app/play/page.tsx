@@ -4,9 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
-type GameType = "STANDARD" | "FOUR_CORNERS" | "BLACKOUT";
-type GameStatus = "CLOSED" | "OPEN" | "LOCKED" | "PAUSED" | "ENDED";
-
 type CardType = "PLAYER" | "FOUNDERS";
 
 type BingoCard = {
@@ -214,60 +211,9 @@ function mintToSeed(mint: string): number {
     h ^= mint.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  // Sync game state for everyone (polling)
-  useEffect(() => {
-    let timer: any = null;
-    let stopped = false;
-
-    const tick = async () => {
-      try {
-        const qs = walletAddress ? `?wallet=${encodeURIComponent(walletAddress)}` : "";
-        const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`);
-        if (stopped) return;
-
-        setGameNumber(s.gameNumber);
-        setGameType(s.gameType);
-        setStatus(s.status);
-        setEntryFeeSol(s.entryFeeSol);
-        setCalledNumbers(s.calledNumbers || []);
-        setWinners(s.winners || []);
-
-        setServerEntriesCount(s.entriesCount || 0);
-        setServerTotalPotSol(s.totalPotSol || 0);
-        setServerPlayerPotSol(s.playerPotSol || 0);
-        setServerFoundersPotSol(s.foundersPotSol || 0);
-        setServerFoundersBonusSol(s.foundersBonusSol || 0);
-        setServerJackpotSol(s.jackpotSol || 0);
-        setServerProgressiveJackpotSol(s.progressiveJackpotSol || 0);
-        setServerCurrentGameJackpotSol(s.currentGameJackpotSol || 0);
-
-        setClaimWindowEndsAt(s.claimWindowEndsAt ?? null);
-        setLastClaim(s.lastClaim ?? null);
-
-        if (s.my?.enteredCardIds) {
-          setEnteredCardIds(s.my.enteredCardIds);
-          setLastEntrySig(s.my.lastSig || "");
-          if (typeof s.my.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol);
-          setEntriesLocked((s.my.enteredCardIds?.length || 0) > 0);
-        } else {
-          setEnteredCardIds([]);
-        }
-      } catch {
-        // ignore poll failures
-      }
-    };
-
-    tick();
-    timer = setInterval(tick, 1500);
-
-    return () => {
-      stopped = true;
-      if (timer) clearInterval(timer);
-    };
-  }, [walletAddress]);
-
   return (h >>> 0) || 1;
 }
+
 
 /** ===== Demo cards (only when wallet not connected / no cards) ===== */
 
@@ -441,6 +387,10 @@ function CardCarousel({
 
 /** ===== Page ===== */
 
+
+type GameType = "STANDARD" | "FOUR_CORNERS" | "BLACKOUT";
+type GameStatus = "CLOSED" | "OPEN" | "LOCKED" | "PAUSED" | "ENDED";
+
 type ServerWinner = { cardId: string; wallet: string; isFounders: boolean; ts: number };
 
 type ServerMy = { enteredCardIds: string[]; lastSig?: string | null; lastTotalSol?: number | null };
@@ -567,6 +517,61 @@ export default function PlayPage() {
   // Wallet
   const wallet = useWallet();
   const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
+
+  // ✅ Sync game state for everyone (server truth)
+  useEffect(() => {
+    let timer: any = null;
+    let stopped = false;
+
+    const tick = async () => {
+      try {
+        const qs = walletAddress ? `?wallet=${encodeURIComponent(walletAddress)}` : "";
+        const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`);
+        if (stopped) return;
+
+        setGameNumber(s.gameNumber);
+        setGameType(s.gameType);
+        setStatus(s.status);
+        setEntryFeeSol(s.entryFeeSol);
+        setCalledNumbers(s.calledNumbers || []);
+        setWinners((s.winners || []).map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
+
+        setServerEntriesCount(s.entriesCount || 0);
+        setServerTotalPotSol(s.totalPotSol || 0);
+        setServerPlayerPotSol(s.playerPotSol || 0);
+        setServerFoundersPotSol(s.foundersPotSol || 0);
+        setServerFoundersBonusSol(s.foundersBonusSol || 0);
+        setServerJackpotSol(s.jackpotSol || 0);
+        setServerProgressiveJackpotSol(s.progressiveJackpotSol || 0);
+        setServerCurrentGameJackpotSol(s.currentGameJackpotSol || 0);
+
+        setClaimWindowEndsAt(s.claimWindowEndsAt ?? null);
+        setLastClaim(s.lastClaim ?? null);
+
+        if (s.my?.enteredCardIds) {
+          setEnteredCardIds(s.my.enteredCardIds);
+          setLastEntrySig(String(s.my.lastSig || ""));
+          if (typeof s.my.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol);
+          setEntriesLocked((s.my.enteredCardIds?.length || 0) > 0);
+        } else {
+          setEnteredCardIds([]);
+          setEntriesLocked(false);
+        }
+      } catch {
+        // ignore poll failures
+      }
+    };
+
+    tick();
+    timer = setInterval(tick, 1500);
+
+    return () => {
+      stopped = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [walletAddress]);
+
+
 
   // Fetch wallet cards from server (allowed collections only)
   useEffect(() => {
