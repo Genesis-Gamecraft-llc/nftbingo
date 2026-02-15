@@ -13,8 +13,14 @@ export async function POST(req: Request) {
 
   const state = await loadState();
 
-  // Only claim when game is live (LOCKED). If PAUSED, admin is already reviewing.
-  if (state.status !== "LOCKED") {
+  const now = Date.now();
+
+  // Allow first claim while LOCKED, and additional claims while PAUSED inside the shared window
+  if (state.status === "PAUSED") {
+    if (!state.claimWindowEndsAt || now > state.claimWindowEndsAt) {
+      return NextResponse.json({ error: "Claim window closed" }, { status: 400 });
+    }
+  } else if (state.status !== "LOCKED") {
     return NextResponse.json({ error: "Game is not live for claims" }, { status: 400 });
   }
 
@@ -28,15 +34,15 @@ export async function POST(req: Request) {
   }
 
   state.winners = state.winners || [];
-  state.winners.push({
-    cardId,
-    wallet,
-    isFounders: false, // MVP: don’t trust client
-    ts: Date.now(),
-  });
+  state.winners.push({ cardId, wallet, isFounders: false, ts: now });
 
-  // Force pause so admin can review and players can’t spam claims
-  state.status = "PAUSED";
+  // On first claim, pause and open 60s window for everyone
+  if (state.status === "LOCKED") {
+    state.status = "PAUSED";
+    state.claimWindowEndsAt = now + 60_000;
+  }
+
+  state.lastClaim = { wallet, cardId, ts: now };
 
   const saved = await saveState(state);
   const { buildStateResponse } = await import("../_stateResponse");

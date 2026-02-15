@@ -14,6 +14,9 @@ export async function buildStateResponse(state: GameState, wallet?: string) {
     entryFeeSol: state.entryFeeSol,
     calledNumbers: state.calledNumbers || [],
     winners: state.winners || [],
+    claimWindowEndsAt: state.claimWindowEndsAt ?? null,
+    lastClaim: state.lastClaim ?? null,
+
     // derived
     entriesCount: pots.entriesCount,
     totalPotSol: pots.totalPotSol,
@@ -23,7 +26,7 @@ export async function buildStateResponse(state: GameState, wallet?: string) {
     jackpotSol: pots.jackpotSol,
     progressiveJackpotSol: state.progressiveJackpotSol || 0,
     currentGameJackpotSol: pots.currentGameJackpotSol,
-    // wallet-specific
+
     my: wallet
       ? (() => {
           const entry = (state.entries || []).find((e) => e.wallet === wallet);

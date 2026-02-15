@@ -1,5 +1,4 @@
 import "server-only";
-import type { PublicKey } from "@solana/web3.js";
 
 export type GameType = "STANDARD" | "FOUR_CORNERS" | "BLACKOUT";
 export type GameStatus = "CLOSED" | "OPEN" | "LOCKED" | "PAUSED" | "ENDED";
@@ -35,10 +34,14 @@ export type GameState = {
   // Current game’s jackpot contribution (derived from current game pot)
   currentGameJackpotSol: number;
 
+  // Shared claim window
+  claimWindowEndsAt: number | null;
+  lastClaim: { wallet: string; cardId: string; ts: number } | null;
+
   updatedAt: number;
 };
 
-const KEY = "nftbingo:gameState:v2";
+const KEY = "nftbingo:gameState:v3";
 
 const DEFAULT_STATE: GameState = {
   gameId: "game-1",
@@ -51,52 +54,37 @@ const DEFAULT_STATE: GameState = {
   winners: [],
   progressiveJackpotSol: 0,
   currentGameJackpotSol: 0,
+  claimWindowEndsAt: null,
+  lastClaim: null,
   updatedAt: Date.now(),
 };
 
 function getUpstashRestUrl() {
-  const u = process.env.UPSTASH_REDIS_REST_URL?.trim();
-  if (u) return u;
-  const kv = process.env.KV_REST_API_URL?.trim();
-  if (kv) return kv;
-  return "";
+  return process.env.UPSTASH_REDIS_REST_URL?.trim() || process.env.KV_REST_API_URL?.trim() || "";
 }
 function getUpstashRestToken() {
-  const t = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
-  if (t) return t;
-  const kv = process.env.KV_REST_API_TOKEN?.trim();
-  if (kv) return kv;
-  return "";
+  return process.env.UPSTASH_REDIS_REST_TOKEN?.trim() || process.env.KV_REST_API_TOKEN?.trim() || "";
 }
 function hasUpstash() {
   return Boolean(getUpstashRestUrl() && getUpstashRestToken());
 }
 
-/**
- * Upstash Redis REST pipeline expects body: [["CMD","arg1","arg2"], ["CMD2",...]]
- */
 async function upstashPipeline(commands: Array<Array<string>>) {
   const url = getUpstashRestUrl();
   const token = getUpstashRestToken();
 
   const res = await fetch(`${url}/pipeline`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(commands),
     cache: "no-store",
   });
 
   const data = await res.json().catch(() => null);
-
   if (!res.ok) {
-    const detail =
-      typeof data === "object" && data ? JSON.stringify(data).slice(0, 300) : "no-json";
+    const detail = typeof data === "object" && data ? JSON.stringify(data).slice(0, 300) : "no-json";
     throw new Error(`Upstash error (${res.status}): ${detail}`);
   }
-
   return data as Array<{ result: any; error?: any }>;
 }
 
@@ -120,15 +108,11 @@ export function derivePots(state: GameState) {
 
   const totalPotSol = entriesCount * (state.entryFeeSol || 0);
 
-  // Split logic (keeps your prior semantics intact)
   const playerPotSol = totalPotSol * 0.75;
   const foundersBonusSol = totalPotSol * 0.05;
   const foundersPotSol = playerPotSol + foundersBonusSol;
 
-  // Current game contribution to progressive jackpot
   const currentGameJackpotSol = totalPotSol * 0.05;
-
-  // Progressive jackpot shown to users
   const jackpotSol = (state.progressiveJackpotSol || 0) + currentGameJackpotSol;
 
   return {
@@ -142,14 +126,14 @@ export function derivePots(state: GameState) {
   };
 }
 
-function withRecalculatedJackpot(state: GameState): GameState {
+function withRecalc(state: GameState): GameState {
   const pots = derivePots(state);
   return { ...state, currentGameJackpotSol: pots.currentGameJackpotSol };
 }
 
 export async function loadState(): Promise<GameState> {
   if (!hasUpstash()) {
-    if (!memoryState) memoryState = withRecalculatedJackpot({ ...DEFAULT_STATE, updatedAt: Date.now() });
+    if (!memoryState) memoryState = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
     return memoryState;
   }
 
@@ -157,34 +141,34 @@ export async function loadState(): Promise<GameState> {
   const raw = out?.[0]?.result;
 
   if (!raw) {
-    const seeded = withRecalculatedJackpot({ ...DEFAULT_STATE, updatedAt: Date.now() });
+    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
     await saveState(seeded);
     return seeded;
   }
 
   try {
-    const parsed = JSON.parse(raw) as GameState;
-    // Backfill missing fields safely
-    const merged: GameState = {
+    const parsed = JSON.parse(raw) as Partial<GameState>;
+    const merged: GameState = withRecalc({
       ...DEFAULT_STATE,
       ...parsed,
       calledNumbers: Array.isArray((parsed as any).calledNumbers) ? (parsed as any).calledNumbers : [],
       entries: Array.isArray((parsed as any).entries) ? (parsed as any).entries : [],
       winners: Array.isArray((parsed as any).winners) ? (parsed as any).winners : [],
       progressiveJackpotSol: Number((parsed as any).progressiveJackpotSol || 0),
-      currentGameJackpotSol: Number((parsed as any).currentGameJackpotSol || 0),
+      claimWindowEndsAt: typeof (parsed as any).claimWindowEndsAt === "number" ? (parsed as any).claimWindowEndsAt : null,
+      lastClaim: (parsed as any).lastClaim || null,
       updatedAt: Date.now(),
-    };
-    return withRecalculatedJackpot(merged);
+    });
+    return merged;
   } catch {
-    const seeded = withRecalculatedJackpot({ ...DEFAULT_STATE, updatedAt: Date.now() });
+    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
     await saveState(seeded);
     return seeded;
   }
 }
 
 export async function saveState(state: GameState): Promise<GameState> {
-  const next = withRecalculatedJackpot({ ...state, updatedAt: Date.now() });
+  const next = withRecalc({ ...state, updatedAt: Date.now() });
 
   if (!hasUpstash()) {
     memoryState = next;
@@ -197,14 +181,15 @@ export async function saveState(state: GameState): Promise<GameState> {
 
 export function makeNewGame(prev: GameState): GameState {
   const newNumber = prev.gameNumber || 1;
-  return withRecalculatedJackpot({
+  return withRecalc({
     ...prev,
     gameId: `game-${newNumber}-${Date.now()}`,
     status: "OPEN",
     calledNumbers: [],
     winners: [],
     entries: [],
-    // current game jackpot resets; progressive remains
+    claimWindowEndsAt: null,
+    lastClaim: null,
     currentGameJackpotSol: 0,
     updatedAt: Date.now(),
   });

@@ -29,13 +29,19 @@ export async function POST(req: Request) {
 
   switch (action) {
     case "NEW_GAME": {
-      // OPEN entries fresh game
       next = makeNewGame(state);
       break;
     }
 
     case "LOCK": {
       next.status = "LOCKED";
+      break;
+    }
+
+    case "RESUME": {
+      next.status = "LOCKED";
+      next.claimWindowEndsAt = null;
+      next.lastClaim = null;
       break;
     }
 
@@ -54,7 +60,6 @@ export async function POST(req: Request) {
       // Bank this game’s jackpot contribution into progressive pool BEFORE clearing entries
       next.progressiveJackpotSol = (next.progressiveJackpotSol || 0) + (state.currentGameJackpotSol || 0);
 
-      // Increment game number & fully close
       next.gameNumber = (state.gameNumber || 1) + 1;
       next.gameId = `game-${next.gameNumber}-${Date.now()}`;
       next.status = "CLOSED";
@@ -62,6 +67,8 @@ export async function POST(req: Request) {
       next.winners = [];
       next.entries = [];
       next.currentGameJackpotSol = 0;
+      next.claimWindowEndsAt = null;
+      next.lastClaim = null;
       break;
     }
 
@@ -73,20 +80,14 @@ export async function POST(req: Request) {
 
     case "CALL_NUMBER": {
       const n = Number(body?.number);
-      if (!(n >= 1 && n <= 75)) {
-        return NextResponse.json({ error: "Invalid number" }, { status: 400 });
-      }
-      if (next.status !== "LOCKED") {
-        return NextResponse.json({ error: "Game not locked" }, { status: 400 });
-      }
+      if (!(n >= 1 && n <= 75)) return NextResponse.json({ error: "Invalid number" }, { status: 400 });
+      if (next.status !== "LOCKED") return NextResponse.json({ error: "Game not locked" }, { status: 400 });
       next.calledNumbers = ensureUniqueCalled(next.calledNumbers || [], n);
       break;
     }
 
     case "UNDO_LAST": {
-      if (next.status !== "LOCKED") {
-        return NextResponse.json({ error: "Game not locked" }, { status: 400 });
-      }
+      if (next.status !== "LOCKED") return NextResponse.json({ error: "Game not locked" }, { status: 400 });
       next.calledNumbers = removeLastCalled(next.calledNumbers || []);
       break;
     }
