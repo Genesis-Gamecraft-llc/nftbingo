@@ -14,18 +14,19 @@ export async function buildStateResponse(state: GameState, wallet?: string) {
     entryFeeSol: state.entryFeeSol,
     calledNumbers: state.calledNumbers || [],
     winners: state.winners || [],
-    claimWindowEndsAt: state.claimWindowEndsAt ?? null,
-    lastClaim: state.lastClaim ?? null,
 
-    // derived
     entriesCount: pots.entriesCount,
     totalPotSol: pots.totalPotSol,
     playerPotSol: pots.playerPotSol,
     foundersPotSol: pots.foundersPotSol,
     foundersBonusSol: pots.foundersBonusSol,
     jackpotSol: pots.jackpotSol,
+
     progressiveJackpotSol: state.progressiveJackpotSol || 0,
     currentGameJackpotSol: pots.currentGameJackpotSol,
+
+    claimWindowEndsAt: state.claimWindowEndsAt ?? null,
+    lastClaim: state.lastClaim ?? null,
 
     my: wallet
       ? (() => {
@@ -33,8 +34,8 @@ export async function buildStateResponse(state: GameState, wallet?: string) {
           return entry
             ? {
                 enteredCardIds: entry.cardIds || [],
-                lastSig: entry.signature || null,
-                lastTotalSol: typeof entry.totalSol === "number" ? entry.totalSol : null,
+                lastSig: entry.signature || "",
+                lastTotalSol: typeof entry.totalSol === "number" ? entry.totalSol : 0,
               }
             : { enteredCardIds: [] as string[] };
         })()

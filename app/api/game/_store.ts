@@ -28,22 +28,23 @@ export type GameState = {
   entries: Entry[];
   winners: Winner[];
 
-  // Progressive jackpot that persists across games until admin resets
+  // progressive jackpot
   progressiveJackpotSol: number;
-
-  // Current game’s jackpot contribution (derived from current game pot)
   currentGameJackpotSol: number;
 
-  // Shared claim window
+  // claim window
   claimWindowEndsAt: number | null;
   lastClaim: { wallet: string; cardId: string; ts: number } | null;
+
+  // optimistic version for safe writes
+  version: number;
 
   updatedAt: number;
 };
 
-const KEY = "nftbingo:gameState:v3";
+export const GAME_STATE_KEY = "nftbingo:gameState:v6";
 
-const DEFAULT_STATE: GameState = {
+export const DEFAULT_STATE: GameState = {
   gameId: "game-1",
   gameNumber: 1,
   gameType: "STANDARD",
@@ -56,20 +57,23 @@ const DEFAULT_STATE: GameState = {
   currentGameJackpotSol: 0,
   claimWindowEndsAt: null,
   lastClaim: null,
+  version: 1,
   updatedAt: Date.now(),
 };
 
-function getUpstashRestUrl() {
+export const DEFAULT_STATE_JSON = JSON.stringify(DEFAULT_STATE);
+
+export function getUpstashRestUrl() {
   return process.env.UPSTASH_REDIS_REST_URL?.trim() || process.env.KV_REST_API_URL?.trim() || "";
 }
-function getUpstashRestToken() {
+export function getUpstashRestToken() {
   return process.env.UPSTASH_REDIS_REST_TOKEN?.trim() || process.env.KV_REST_API_TOKEN?.trim() || "";
 }
-function hasUpstash() {
+export function hasUpstash() {
   return Boolean(getUpstashRestUrl() && getUpstashRestToken());
 }
 
-async function upstashPipeline(commands: Array<Array<string>>) {
+export async function upstashPipeline(commands: Array<Array<string>>) {
   const url = getUpstashRestUrl();
   const token = getUpstashRestToken();
 
@@ -82,10 +86,20 @@ async function upstashPipeline(commands: Array<Array<string>>) {
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    const detail = typeof data === "object" && data ? JSON.stringify(data).slice(0, 300) : "no-json";
+    const detail = typeof data === "object" && data ? JSON.stringify(data).slice(0, 600) : "no-json";
     throw new Error(`Upstash error (${res.status}): ${detail}`);
   }
   return data as Array<{ result: any; error?: any }>;
+}
+
+export async function upstashEval(script: string, keys: string[], args: Array<string | number>) {
+  // Redis EVAL: EVAL <script> <numkeys> <key1..> <arg1..>
+  const cmd: Array<string> = ["EVAL", script, String(keys.length), ...keys.map(String), ...args.map(String)];
+  const out = await upstashPipeline([cmd]);
+  const r = out?.[0];
+  if (!r) throw new Error("Upstash eval returned no result.");
+  if (r.error) throw new Error(typeof r.error === "string" ? r.error : JSON.stringify(r.error));
+  return r.result;
 }
 
 let memoryState: GameState | null = null;
@@ -108,6 +122,7 @@ export function derivePots(state: GameState) {
 
   const totalPotSol = entriesCount * (state.entryFeeSol || 0);
 
+  // Match UI semantics
   const playerPotSol = totalPotSol * 0.75;
   const foundersBonusSol = totalPotSol * 0.05;
   const foundersPotSol = playerPotSol + foundersBonusSol;
@@ -126,22 +141,22 @@ export function derivePots(state: GameState) {
   };
 }
 
-function withRecalc(state: GameState): GameState {
+export function withRecalc(state: GameState): GameState {
   const pots = derivePots(state);
   return { ...state, currentGameJackpotSol: pots.currentGameJackpotSol };
 }
 
 export async function loadState(): Promise<GameState> {
   if (!hasUpstash()) {
-    if (!memoryState) memoryState = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
+    if (!memoryState) memoryState = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now(), version: 1 });
     return memoryState;
   }
 
-  const out = await upstashPipeline([["GET", KEY]]);
+  const out = await upstashPipeline([["GET", GAME_STATE_KEY]]);
   const raw = out?.[0]?.result;
 
   if (!raw) {
-    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
+    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now(), version: 1 });
     await saveState(seeded);
     return seeded;
   }
@@ -157,33 +172,37 @@ export async function loadState(): Promise<GameState> {
       progressiveJackpotSol: Number((parsed as any).progressiveJackpotSol || 0),
       claimWindowEndsAt: typeof (parsed as any).claimWindowEndsAt === "number" ? (parsed as any).claimWindowEndsAt : null,
       lastClaim: (parsed as any).lastClaim || null,
+      version: Number((parsed as any).version || 1),
       updatedAt: Date.now(),
     });
     return merged;
   } catch {
-    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now() });
+    const seeded = withRecalc({ ...DEFAULT_STATE, updatedAt: Date.now(), version: 1 });
     await saveState(seeded);
     return seeded;
   }
 }
 
 export async function saveState(state: GameState): Promise<GameState> {
-  const next = withRecalc({ ...state, updatedAt: Date.now() });
+  const next = withRecalc({
+    ...state,
+    version: Number.isFinite((state as any).version) ? (state.version || 0) + 1 : 1,
+    updatedAt: Date.now(),
+  });
 
   if (!hasUpstash()) {
     memoryState = next;
     return next;
   }
 
-  await upstashPipeline([["SET", KEY, JSON.stringify(next)]]);
+  await upstashPipeline([["SET", GAME_STATE_KEY, JSON.stringify(next)]]);
   return next;
 }
 
 export function makeNewGame(prev: GameState): GameState {
-  const newNumber = prev.gameNumber || 1;
   return withRecalc({
     ...prev,
-    gameId: `game-${newNumber}-${Date.now()}`,
+    gameId: `game-${prev.gameNumber}-${Date.now()}`,
     status: "OPEN",
     calledNumbers: [],
     winners: [],
@@ -191,6 +210,7 @@ export function makeNewGame(prev: GameState): GameState {
     claimWindowEndsAt: null,
     lastClaim: null,
     currentGameJackpotSol: 0,
+    version: (prev.version || 0) + 1,
     updatedAt: Date.now(),
   });
 }

@@ -18,46 +18,6 @@ type BingoCard = {
 
 type ClaimResult = "ACCEPTED" | "REJECTED";
 
-
-type ServerWinner = { cardId: string; wallet: string; isFounders: boolean; ts: number };
-
-type ServerGameState = {
-  ok: true;
-  gameId: string;
-  gameNumber: number;
-  gameType: GameType;
-  status: GameStatus;
-  entryFeeSol: number;
-  calledNumbers: number[];
-  winners: ServerWinner[];
-  // derived on server
-  entriesCount: number;
-  totalPotSol: number;
-  playerPotSol: number;
-  foundersPotSol: number;
-  foundersBonusSol: number;
-  jackpotSol: number;
-  // wallet-specific (only when wallet query provided)
-  my?: { enteredCardIds: string[]; lastSig?: string; lastTotalSol?: number };
-};
-
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, {
-    cache: "no-store",
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  });
-  const data = (await res.json().catch(() => ({}))) as any;
-  if (!res.ok) {
-    const msg = data?.error || data?.message || `Request failed (${res.status})`;
-    throw new Error(msg);
-  }
-  return data as T;
-}
-
 /** ===== Helpers ===== */
 
 async function confirmSignatureByPolling(
@@ -254,6 +214,58 @@ function mintToSeed(mint: string): number {
     h ^= mint.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
+  // Sync game state for everyone (polling)
+  useEffect(() => {
+    let timer: any = null;
+    let stopped = false;
+
+    const tick = async () => {
+      try {
+        const qs = walletAddress ? `?wallet=${encodeURIComponent(walletAddress)}` : "";
+        const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`);
+        if (stopped) return;
+
+        setGameNumber(s.gameNumber);
+        setGameType(s.gameType);
+        setStatus(s.status);
+        setEntryFeeSol(s.entryFeeSol);
+        setCalledNumbers(s.calledNumbers || []);
+        setWinners(s.winners || []);
+
+        setServerEntriesCount(s.entriesCount || 0);
+        setServerTotalPotSol(s.totalPotSol || 0);
+        setServerPlayerPotSol(s.playerPotSol || 0);
+        setServerFoundersPotSol(s.foundersPotSol || 0);
+        setServerFoundersBonusSol(s.foundersBonusSol || 0);
+        setServerJackpotSol(s.jackpotSol || 0);
+        setServerProgressiveJackpotSol(s.progressiveJackpotSol || 0);
+        setServerCurrentGameJackpotSol(s.currentGameJackpotSol || 0);
+
+        setClaimWindowEndsAt(s.claimWindowEndsAt ?? null);
+        setLastClaim(s.lastClaim ?? null);
+
+        if (s.my?.enteredCardIds) {
+          setEnteredCardIds(s.my.enteredCardIds);
+          setLastEntrySig(s.my.lastSig || "");
+          if (typeof s.my.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol);
+          setEntriesLocked((s.my.enteredCardIds?.length || 0) > 0);
+        } else {
+          setEnteredCardIds([]);
+        }
+      } catch {
+        // ignore poll failures
+      }
+    };
+
+    tick();
+    timer = setInterval(tick, 1500);
+
+    return () => {
+      stopped = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [walletAddress]);
+
   return (h >>> 0) || 1;
 }
 
@@ -429,23 +441,76 @@ function CardCarousel({
 
 /** ===== Page ===== */
 
+
+type GameType = "STANDARD" | "FOUR_CORNERS" | "BLACKOUT";
+type GameStatus = "CLOSED" | "OPEN" | "LOCKED" | "PAUSED" | "ENDED";
+
+type ServerWinner = { cardId: string; wallet: string; isFounders: boolean; ts: number };
+
+type ServerMy = { enteredCardIds: string[]; lastSig?: string | null; lastTotalSol?: number | null };
+
+type ServerGameState = {
+  ok: true;
+  gameId: string;
+  gameNumber: number;
+  gameType: GameType;
+  status: GameStatus;
+  entryFeeSol: number;
+  calledNumbers: number[];
+  winners: ServerWinner[];
+  entriesCount: number;
+  totalPotSol: number;
+  playerPotSol: number;
+  foundersPotSol: number;
+  foundersBonusSol: number;
+  jackpotSol: number;
+  progressiveJackpotSol: number;
+  currentGameJackpotSol: number;
+  claimWindowEndsAt: number | null;
+  lastClaim: { wallet: string; cardId: string; ts: number } | null;
+  my?: ServerMy;
+};
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    cache: "no-store",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = (data as any)?.error || (data as any)?.message || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data as T;
+}
+
+
 export default function PlayPage() {
   // Game config
   const [gameNumber, setGameNumber] = useState<number>(1);
   const [gameType, setGameType] = useState<GameType>("STANDARD");
-  const [gameTypeDraft, setGameTypeDraft] = useState<GameType>("STANDARD");
-  const [isEditingGameType, setIsEditingGameType] = useState<boolean>(false);
   const [status, setStatus] = useState<GameStatus>("CLOSED");
 
   // Entry pricing
   const [entryFeeSol, setEntryFeeSol] = useState<number>(0.05);
-  // Admin edit buffer (polling-safe)
-  const [entryFeeDraft, setEntryFeeDraft] = useState<string>("0.05");
-  const [isEditingEntryFee, setIsEditingEntryFee] = useState<boolean>(false);
 
-  const isEditingGameTypeRef = useRef(false);
-const isEditingEntryFeeRef = useRef(false);
+  // Server-derived pots (cumulative across all players)
+  const [serverEntriesCount, setServerEntriesCount] = useState<number>(0);
+  const [serverTotalPotSol, setServerTotalPotSol] = useState<number>(0);
+  const [serverPlayerPotSol, setServerPlayerPotSol] = useState<number>(0);
+  const [serverFoundersPotSol, setServerFoundersPotSol] = useState<number>(0);
+  const [serverFoundersBonusSol, setServerFoundersBonusSol] = useState<number>(0);
+  const [serverJackpotSol, setServerJackpotSol] = useState<number>(0);
+  const [serverProgressiveJackpotSol, setServerProgressiveJackpotSol] = useState<number>(0);
+  const [serverCurrentGameJackpotSol, setServerCurrentGameJackpotSol] = useState<number>(0);
 
+  // Global claim window (shared across all clients)
+  const [claimWindowEndsAt, setClaimWindowEndsAt] = useState<number | null>(null);
+  const [lastClaim, setLastClaim] = useState<{ wallet: string; cardId: string; ts: number } | null>(null);
+
+  // Wallet-specific entered card ids (from server)
+  const [enteredCardIds, setEnteredCardIds] = useState<string[]>([]);
 
   // Called numbers (MVP: mirror-click admin)
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
@@ -506,105 +571,6 @@ const isEditingEntryFeeRef = useRef(false);
   // Wallet
   const wallet = useWallet();
   const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
-
-// Server-persisted game state (Upstash-backed via /api/game/*)
-const [serverGameId, setServerGameId] = useState<string>("");
-const lastServerGameId = useRef<string>("");
-const [myEnteredIds, setMyEnteredIds] = useState<string[]>([]);
-const pollTimer = useRef<number | null>(null);
-
-function applyServerState(s: ServerGameState) {
-  // If a new game started server-side, reset client-only bits that should not carry over.
-  if (lastServerGameId.current && s.gameId && lastServerGameId.current !== s.gameId) {
-    setSelectedCards([]);
-    setEnteredCards([]);
-    setEntriesLocked(false);
-    setLastEntrySig("");
-    setLastEntryTotalSol(0);
-
-    setClaimResult(null);
-    setInvalidStrikes(0);
-    setLastClaimAt(0);
-    setClaimWindowOpenAt(null);
-    closeClaimWindow();
-  }
-
-  lastServerGameId.current = s.gameId;
-  setServerGameId(s.gameId);
-
-  setGameNumber(s.gameNumber);
-  setGameType(s.gameType);
-  // Don’t clobber admin typing mid-edit (use refs to avoid stale closure in polling)
-  if (!isEditingGameTypeRef.current) {
-    setGameTypeDraft(s.gameType);
-  }
-  setStatus(s.status);
-  // Keep authoritative value from server, but don’t clobber admin typing mid-edit
-  setEntryFeeSol(s.entryFeeSol);
-  if (!isEditingEntryFeeRef.current) {
-    setEntryFeeDraft(String(s.entryFeeSol));
-  }
-  setCalledNumbers(Array.isArray(s.calledNumbers) ? s.calledNumbers : []);
-
-  const ws = Array.isArray(s.winners) ? s.winners : [];
-  setWinners(ws.map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
-
-  const mine = s.my?.enteredCardIds || [];
-  setMyEnteredIds(mine);
-
-  if (mine.length > 0) setEntriesLocked(true);
-  if (typeof s.my?.lastSig === "string") setLastEntrySig(s.my.lastSig || "");
-  if (typeof s.my?.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol || 0);
-}
-
-// Poll server state so game persists across refresh/devices
-useEffect(() => {
-  let alive = true;
-
-  async function tick() {
-    try {
-      const qs = walletAddress ? `?wallet=${encodeURIComponent(walletAddress)}` : "";
-      const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`);
-      if (!alive) return;
-      applyServerState(s);
-    } catch {
-      // ignore transient errors
-    }
-  }
-
-  tick();
-  if (pollTimer.current) window.clearInterval(pollTimer.current);
-  pollTimer.current = window.setInterval(tick, 1200);
-
-  return () => {
-    alive = false;
-    if (pollTimer.current) window.clearInterval(pollTimer.current);
-    pollTimer.current = null;
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [walletAddress]);
-
-// Sync "paid entries" from server → local enteredCards (so refreshes keep your entries)
-useEffect(() => {
-  if (!myEnteredIds.length) return;
-
-  const byId = new Map(walletCards.map((c) => [c.id, c]));
-  const mapped = myEnteredIds.map((id) => {
-    const found = byId.get(id);
-    if (found) return found;
-    return {
-      id,
-      label: "Entered Card",
-      type: "PLAYER" as CardType,
-      grid: demoCard("Entered Card", "PLAYER", mintToSeed(id)).grid,
-    } satisfies BingoCard;
-  });
-
-  setEnteredCards(mapped);
-  setEntriesLocked(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [myEnteredIds.join("|"), walletCards]);
-
 
   // Fetch wallet cards from server (allowed collections only)
   useEffect(() => {
@@ -681,134 +647,78 @@ useEffect(() => {
   }
 
   // Admin actions (MVP local)
-  
-async function adminNewGame() {
-  try {
-    const s = await fetchJson<ServerGameState>("/api/game/admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "NEW_GAME" }),
-    });
-    applyServerState(s);
-  } catch (e: any) {
-    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to start new game." });
-  }
-}
+  function adminNewGame() {
+    setStatus("OPEN");
+    setCalledNumbers([]);
+    setSelectedCards([]);
+    setEnteredCards([]); // ✅ reset paid entries
+    setEntriesLocked(false);
+    setLastEntrySig("");
+    setLastEntryTotalSol(0);
 
-async function adminLockGameStart() {
-  try {
-    const s = await fetchJson<ServerGameState>("/api/game/admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "LOCK" }),
-    });
-    applyServerState(s);
+    setWinners([]);
     setClaimResult(null);
+    setInvalidStrikes(0);
+    setLastClaimAt(0);
     setClaimWindowOpenAt(null);
     closeClaimWindow();
-  } catch (e: any) {
-    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to lock game." });
-  }
-}
-
-async function adminPauseToggle() {
-  try {
-    const s = await fetchJson<ServerGameState>("/api/game/admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "PAUSE_TOGGLE" }),
-    });
-    applyServerState(s);
-  } catch (e: any) {
-    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to pause/resume." });
-  }
-}
-
-async function adminEndGame() {
-  try {
-    const s = await fetchJson<ServerGameState>("/api/game/admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "END" }),
-    });
-    applyServerState(s);
-    closeClaimWindow();
-  } catch (e: any) {
-    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to end game." });
-  }
-}
-
-async function adminCloseAndIncrement() {
-  try {
-    const s = await fetchJson<ServerGameState>("/api/game/admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "CLOSE_NEXT" }),
-    });
-    applyServerState(s);
-    closeClaimWindow();
-  } catch (e: any) {
-    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to close & next." });
-  }
-}
-
-
-  async function adminSetEntryFee(nextFee: number) {
-    if (!isAdmin) return;
-    if (status !== "OPEN" && status !== "CLOSED") return;
-
-    try {
-      const s = await fetchJson<ServerGameState>("/api/game/admin", {
-        method: "POST",
-        body: JSON.stringify({ action: "SET_FEE", entryFeeSol: nextFee }),
-      });
-      applyServerState(s);
-    } catch (e: any) {
-      setClaimResult({ result: "REJECTED", message: e?.message || "Failed to set entry fee." });
-    }
   }
 
-
-  async function adminSetGameType(nextType: GameType) {
-    if (!isAdmin) return;
-    if (status !== "OPEN" && status !== "CLOSED") return;
-
-    try {
-      const s = await fetchJson<ServerGameState>("/api/game/admin", {
-        method: "POST",
-        body: JSON.stringify({ action: "SET_TYPE", gameType: nextType }),
-      });
-      applyServerState(s);
-    } catch (e: any) {
-      setClaimResult({ result: "REJECTED", message: e?.message || "Failed to set game type." });
-    }
-  }
-
-async function adminCallNumber(n: number) {
-  if (status !== "LOCKED" && status !== "PAUSED") return;
-  try {
-    const s = await fetchJson<ServerGameState>("/api/game/admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "CALL_NUMBER", number: n }),
-    });
-    applyServerState(s);
-    if (claimWindowOpenAt) closeClaimWindow();
+  function adminLockGameStart() {
+    setStatus("LOCKED");
     setClaimResult(null);
-  } catch (e: any) {
-    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to call number." });
+    setWinners([]);
+    setInvalidStrikes(0);
+    setLastClaimAt(0);
+    setClaimWindowOpenAt(null);
+    closeClaimWindow();
   }
-}
 
-async function adminUndo() {
-  if (status !== "LOCKED" && status !== "PAUSED") return;
-  try {
-    const s = await fetchJson<ServerGameState>("/api/game/admin", {
-      method: "POST",
-      body: JSON.stringify({ action: "UNDO_LAST" }),
-    });
-    applyServerState(s);
+  function adminPauseToggle() {
+    if (status === "LOCKED") setStatus("PAUSED");
+    else if (status === "PAUSED") setStatus("LOCKED");
+  }
+
+  function adminEndGame() {
+    setStatus("ENDED");
+    closeClaimWindow();
+  }
+
+  function adminCloseAndIncrement() {
+    setGameNumber((n) => n + 1);
+    setStatus("CLOSED");
+    setCalledNumbers([]);
+    setSelectedCards([]);
+    setEnteredCards([]); // ✅ reset paid entries
+    setEntriesLocked(false);
+    setLastEntrySig("");
+    setLastEntryTotalSol(0);
+
+    setWinners([]);
     setClaimResult(null);
-  } catch (e: any) {
-    setClaimResult({ result: "REJECTED", message: e?.message || "Failed to undo." });
+    setInvalidStrikes(0);
+    setLastClaimAt(0);
+    setClaimWindowOpenAt(null);
+    closeClaimWindow();
   }
-}
 
-// Player actions
+  function adminCallNumber(n: number) {
+    if (status !== "LOCKED" && status !== "PAUSED") return;
+    setCalledNumbers((prev) => {
+      const next = uniquePush(prev, n);
+      if (claimWindowOpenAt) closeClaimWindow(); // next number called closes window
+      return next;
+    });
+    setClaimResult(null);
+  }
+
+  function adminUndo() {
+    if (status !== "LOCKED" && status !== "PAUSED") return;
+    setCalledNumbers((prev) => removeLast(prev));
+    setClaimResult(null);
+  }
+
+  // Player actions
   function toggleSelectCard(card: BingoCard) {
     if (status !== "OPEN") return;
     if (entriesLocked) return; // ✅ can’t change after paying
@@ -902,29 +812,34 @@ async function adminUndo() {
 // ✅ Confirm without websockets (no signatureSubscribe)
 await confirmSignatureByPolling(connection, sig, 60_000);
 
-// Persist entry on backend (so refresh/devices keep state)
-try {
-  const s = await fetchJson<ServerGameState>("/api/game/enter", {
-    method: "POST",
-    body: JSON.stringify({
-      wallet: wallet.publicKey.toBase58(),
-      cardIds: selectedCards.map((c) => c.id),
-      signature: sig,
-      totalSol,
-    }),
-  });
-  applyServerState(s);
-} catch {
-  // If persistence fails, keep local UX.
-}
-
-
 
       // ✅ only now do we count them in pots
       setEnteredCards(selectedCards);
       setEntriesLocked(true);
       setLastEntrySig(sig);
       setLastEntryTotalSol(totalSol);
+
+      // Persist entry on backend so pots/entries are cumulative across all wallets
+      try {
+        await fetchJson<ServerGameState>("/api/game/enter", {
+          method: "POST",
+          body: JSON.stringify({
+            wallet: wallet.publicKey.toBase58(),
+            signature: sig,
+            totalSol,
+            cardIds: selectedCards.map((c) => c.id),
+          }),
+        });
+      } catch (e: any) {
+        // Surface server error (do not pretend entry succeeded for shared state)
+        setClaimResult({
+          result: "REJECTED",
+          message: e?.message ? `Entry save failed: ${e.message}` : "Entry save failed.",
+        });
+        setEnteredCards([]);
+        setEntriesLocked(false);
+        return;
+      }
 
       setClaimResult({
         result: "ACCEPTED",
@@ -939,15 +854,14 @@ try {
       setPaying(false);
     }
   }
+  // Pots are server-derived (cumulative across all connected wallets)
+  const entriesCount = serverEntriesCount;
+  const totalPot = serverTotalPotSol;
 
-  // Derived: use PAID entries for pots
-  const entriesCount = enteredCards.length;
-  const totalPot = entriesCount * entryFeeSol;
-
-  const playerSeriesPot = totalPot * 0.75;
-  const foundersBonus = totalPot * 0.05;
-  const foundersSeriesPot = playerSeriesPot + foundersBonus; // 80%
-  const jackpotPot = totalPot * 0.05;
+  const playerSeriesPot = serverPlayerPotSol;
+  const foundersBonus = serverFoundersBonusSol;
+  const foundersSeriesPot = serverFoundersPotSol;
+  const jackpotPot = serverJackpotSol;
 
   // Derived: winning cards (use paid entries once locked; fallback to selected for admin testing)
   const activeEntries = entriesLocked ? enteredCards : selectedCards;
@@ -965,18 +879,16 @@ try {
     const now = Date.now();
     if (now - lastClaimAt < 10_000) return false;
 
-    if (claimWindowOpenAt && claimWindowSecondsLeft <= 0) return false;
+    // If game is paused for claim review, allow additional claims only inside the shared window
+    if (status === "PAUSED") {
+      if (!claimWindowEndsAt) return false;
+      if (now > claimWindowEndsAt) return false;
+    }
 
     return true;
-  }, [status, winningCards, invalidStrikes, lastClaimAt, claimWindowOpenAt, claimWindowSecondsLeft]);
+  }, [status, winningCards, invalidStrikes, lastClaimAt, claimWindowEndsAt]);
 
-  useEffect(() => {
-    if ((status === "LOCKED" || status === "PAUSED") && winningCards.length > 0 && claimWindowOpenAt == null) {
-      openClaimWindow();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, winningCards.length]);
-
+  
   async function handleCallBingo() {
     if (!canClaimBingo) return;
 
@@ -985,44 +897,39 @@ try {
     setClaiming(true);
     setClaimResult(null);
 
-    const eligible = winningCards.filter((c) => !winners.some((w) => w.cardId === c.id)); // one win per card
+    const eligible = winningCards.filter((c) => !winners.some((w) => w.cardId === c.id));
     if (eligible.length === 0) {
       setInvalidStrikes((s) => s + 1);
-      setClaimResult({ result: "REJECTED", message: "No eligible winning cards (already won or none winning)." });
+      setClaimResult({ result: "REJECTED", message: "No eligible winning cards (already claimed or none winning)." });
       setClaiming(false);
       return;
     }
 
     const claimedCard = eligible[0];
-    const isFounders = claimedCard.type === "FOUNDERS";
 
-    
-// Persist winner on backend (manual card verification is still on you for MVP)
-try {
-  const s = await fetchJson<ServerGameState>("/api/game/claim", {
-    method: "POST",
-    body: JSON.stringify({
-      wallet: walletAddress,
-      cardId: claimedCard.id,
-      isFounders, // server may ignore later when we do trusted verification
-    }),
-  });
-  applyServerState(s);
-  setClaimResult({
-    result: "ACCEPTED",
-    message: `BINGO accepted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}).`,
-  });
-} catch (e: any) {
-  // fallback to local list so testing can continue even if server hiccups
-  setWinners((prev) => [...prev, { cardId: claimedCard.id, wallet: walletAddress, isFounders }]);
-  setClaimResult({
-    result: "ACCEPTED",
-    message: `BINGO accepted for ${claimedCard.label} (${isFounders ? "Founders" : "Player"}). (local fallback)`,
-  });
-} finally {
-  setClaiming(false);
-}
+    try {
+      await fetchJson<ServerGameState>("/api/game/claim", {
+        method: "POST",
+        body: JSON.stringify({
+          wallet: walletAddress,
+          cardId: claimedCard.id,
+        }),
+      });
 
+      setClaimResult({
+        result: "ACCEPTED",
+        message: `BINGO claim submitted for ${claimedCard.label}. Host is verifying now.`,
+      });
+      // The server will pause the game and open a shared 60s claim window for everyone.
+    } catch (e: any) {
+      setInvalidStrikes((s) => s + 1);
+      setClaimResult({
+        result: "REJECTED",
+        message: e?.message ? `Claim rejected: ${e.message}` : "Claim rejected.",
+      });
+    } finally {
+      setClaiming(false);
+    }
   }
 
   // Payout preview (fair model)
@@ -1255,7 +1162,7 @@ try {
                   {claimResult && (
                     <div
                       className={[
-                        "mt-4 rounded-xl p-3 text-sm border",
+                        "mt-4 rounded-xl p-3 text-sm border break-all whitespace-normal",
                         claimResult.result === "ACCEPTED"
                           ? "bg-emerald-50 border-emerald-200 text-emerald-900"
                           : "bg-rose-50 border-rose-200 text-rose-900",
@@ -1331,25 +1238,9 @@ try {
                       type="number"
                       step="0.001"
                       min="0"
-                      value={entryFeeDraft}
-                      disabled={!isAdmin || status === "LOCKED" || status === "PAUSED"}
-                      onFocus={() => { setIsEditingEntryFee(true); isEditingEntryFeeRef.current = true; }}
-                      onChange={(e) => setEntryFeeDraft(e.target.value)}
-                      onBlur={() => {
-                        setIsEditingEntryFee(false);
-                        isEditingEntryFeeRef.current = false;
-                        const v = Number(entryFeeDraft);
-                        if (!Number.isFinite(v) || v <= 0) {
-                          // revert display to server value
-                          setEntryFeeDraft(String(entryFeeSol));
-                          return;
-                        }
-                        const nextFee = clamp(v, 0.000001, 100);
-                        // Optimistic local update so UI doesn’t feel laggy
-                        setEntryFeeSol(nextFee);
-                        setEntryFeeDraft(String(nextFee));
-                        adminSetEntryFee(nextFee);
-                      }}
+                      value={entryFeeSol}
+                      disabled={status === "LOCKED" || status === "PAUSED"}
+                      onChange={(e) => setEntryFeeSol(clamp(parseFloat(e.target.value || "0"), 0, 100))}
                       className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                     />
                     <span className="text-sm text-slate-600">per card</span>
@@ -1360,16 +1251,9 @@ try {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-sm text-slate-600">Game Type</div>
                   <select
-                    value={gameTypeDraft}
-                    disabled={!isAdmin || status === "LOCKED" || status === "PAUSED"}
-                    onFocus={() => { setIsEditingGameType(true); isEditingGameTypeRef.current = true; }}
-                    onChange={(e) => setGameTypeDraft(e.target.value as GameType)}
-                    onBlur={() => {
-                      setIsEditingGameType(false);
-                        isEditingGameTypeRef.current = false;
-                      setGameType(gameTypeDraft);
-                      adminSetGameType(gameTypeDraft);
-                    }}
+                    value={gameType}
+                    disabled={status === "LOCKED" || status === "PAUSED"}
+                    onChange={(e) => setGameType(e.target.value as GameType)}
                     className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
                   >
                     <option value="STANDARD">Standard</option>
@@ -1487,7 +1371,7 @@ try {
         </div>
 
         <div className="mt-10 text-xs text-slate-500">
-          Pots only increase after “Pay & Enter” confirms on-chain. The more players we have, the larger the pots get!
+          MVP note: Pots only increase after “Pay & Enter” confirms on-chain. Next step is wiring backend entry records + payouts.
         </div>
       </div>
     </main>
