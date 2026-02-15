@@ -6,20 +6,18 @@ import {
   ensureUniqueCalled,
   removeLastCalled,
   makeNewGame,
+  type GameType,
 } from "../_store";
-
-async function isAdminCookie() {
-  const cookieStore = await cookies();
-  const c = cookieStore.get("nftbingo_admin")?.value;
-  return c === "1";
-}
 
 export const runtime = "nodejs";
 
+async function isAdminCookie() {
+  const c = await cookies();
+  return c.get("nftbingo_admin")?.value === "1";
+}
+
 export async function POST(req: Request) {
-  if (!(await isAdminCookie())) {
-    return NextResponse.json({ error: "Admin only" }, { status: 401 });
-  }
+  if (!(await isAdminCookie())) return NextResponse.json({ error: "Admin only" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
   const action = String(body?.action || "");
@@ -35,6 +33,8 @@ export async function POST(req: Request) {
 
     case "LOCK": {
       next.status = "LOCKED";
+      next.claimWindowEndsAt = null;
+      next.lastClaim = null;
       break;
     }
 
@@ -44,37 +44,48 @@ export async function POST(req: Request) {
       break;
     }
 
+    case "RESUME": {
+      next.status = "LOCKED";
+      next.claimWindowEndsAt = null;
+      next.lastClaim = null;
+      break;
+    }
+
     case "END": {
       next.status = "ENDED";
       break;
     }
 
     case "CLOSE_NEXT": {
+      // Bank this game's jackpot contribution into progressive BEFORE clearing entries.
+      next.progressiveJackpotSol = (next.progressiveJackpotSol || 0) + (state.currentGameJackpotSol || 0);
+
       next.gameNumber = (state.gameNumber || 1) + 1;
+      next.gameId = `game-${next.gameNumber}-${Date.now()}`;
       next.status = "CLOSED";
       next.calledNumbers = [];
       next.winners = [];
       next.entries = [];
-      next.gameId = `game-${next.gameNumber}-${Date.now()}`;
+      next.claimWindowEndsAt = null;
+      next.lastClaim = null;
+      break;
+    }
+
+    case "RESET_JACKPOT": {
+      next.progressiveJackpotSol = 0;
       break;
     }
 
     case "CALL_NUMBER": {
       const n = Number(body?.number);
-      if (!(n >= 1 && n <= 75)) {
-        return NextResponse.json({ error: "Invalid number" }, { status: 400 });
-      }
-      if (next.status !== "LOCKED" && next.status !== "PAUSED") {
-        return NextResponse.json({ error: "Game not locked" }, { status: 400 });
-      }
+      if (!(n >= 1 && n <= 75)) return NextResponse.json({ error: "Invalid number" }, { status: 400 });
+      if (next.status !== "LOCKED") return NextResponse.json({ error: "Game not locked" }, { status: 400 });
       next.calledNumbers = ensureUniqueCalled(next.calledNumbers || [], n);
       break;
     }
 
     case "UNDO_LAST": {
-      if (next.status !== "LOCKED" && next.status !== "PAUSED") {
-        return NextResponse.json({ error: "Game not locked" }, { status: 400 });
-      }
+      if (next.status !== "LOCKED") return NextResponse.json({ error: "Game not locked" }, { status: 400 });
       next.calledNumbers = removeLastCalled(next.calledNumbers || []);
       break;
     }
@@ -85,29 +96,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid game type" }, { status: 400 });
       }
       if (next.status !== "OPEN" && next.status !== "CLOSED") {
-        return NextResponse.json(
-          { error: "Can't change type during a live game" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Can't change type during a live game" }, { status: 400 });
       }
-      next.gameType = t as any;
+      next.gameType = t as GameType;
       break;
     }
 
     case "SET_FEE": {
-      const feeRaw = body?.entryFeeSol;
-      const fee = typeof feeRaw === "string" ? Number(feeRaw) : Number(feeRaw);
-
+      const fee = Number(body?.entryFeeSol);
       if (!Number.isFinite(fee) || fee <= 0 || fee >= 100) {
         return NextResponse.json({ error: "Invalid entry fee" }, { status: 400 });
       }
       if (next.status !== "OPEN" && next.status !== "CLOSED") {
-        return NextResponse.json(
-          { error: "Can't change entry fee during a live game" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Can't change fee during a live game" }, { status: 400 });
       }
-      // normalize to 8 decimals max (prevents float spam)
       next.entryFeeSol = Math.round(fee * 1e8) / 1e8;
       break;
     }
@@ -116,10 +118,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
 
-  next = await saveState(next);
-
+  const saved = await saveState(next);
   const { buildStateResponse } = await import("../_stateResponse");
-  return NextResponse.json(await buildStateResponse(next), {
-    headers: { "Cache-Control": "no-store" },
-  });
+  return NextResponse.json(await buildStateResponse(saved), { headers: { "Cache-Control": "no-store" } });
 }
