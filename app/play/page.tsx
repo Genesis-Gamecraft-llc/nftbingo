@@ -928,6 +928,18 @@ await confirmSignatureByPolling(connection, sig, 60_000);
   const foundersSeriesPot = serverFoundersPotSol;
   const jackpotPot = serverJackpotSol;
 
+  // Auto-select entered card(s) for viewing (mobile UX)
+  // Players shouldn't have to tap "Select" after the game locks; show their entered grid automatically.
+  useEffect(() => {
+    if (!enteredCardIds.length) return;
+    if (selectedCards.length) return;
+
+    const entered = walletCards.filter((c) => enteredCardIds.includes(c.id));
+    if (entered.length) setSelectedCards(entered);
+  }, [enteredCardIds, walletCards, selectedCards.length]);
+
+
+
   // Derived: winning cards (use paid entries once locked; fallback to selected for admin testing)
   const activeEntries = entriesLocked ? enteredCards : selectedCards;
 
@@ -1083,7 +1095,8 @@ await confirmSignatureByPolling(connection, sig, 60_000);
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {(wallet.connected && walletCards.length ? walletCards : walletCards).map((card) => {
                   const selected = selectedCards.some((c) => c.id === card.id);
-                  const disabled = status !== "OPEN" || entriesLocked;
+                  const isEntered = enteredCardIds.includes(card.id);
+                  const disabled = (status !== "OPEN" || entriesLocked) && !isEntered;
 
                   return (
                     <button

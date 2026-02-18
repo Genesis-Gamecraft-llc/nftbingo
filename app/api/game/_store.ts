@@ -186,8 +186,22 @@ export async function saveState(state: GameState): Promise<GameState> {
 }
 
 export function makeNewGame(prev: GameState): GameState {
+  // Roll the current game's jackpot portion into the progressive jackpot ONCE per game.
+  // This ensures progressive keeps accumulating across games until manually reset.
+  let progressiveJackpotSol = Number(prev.progressiveJackpotSol || 0);
+  let lastProgressiveRollGameId = prev.lastProgressiveRollGameId;
+
+  if (prev.gameId && lastProgressiveRollGameId !== prev.gameId) {
+    const carry = Number(prev.currentGameJackpotSol || 0);
+    if (Number.isFinite(carry) && carry > 0) progressiveJackpotSol += carry;
+    lastProgressiveRollGameId = prev.gameId;
+  }
+
   return withRecalc({
     ...prev,
+    progressiveJackpotSol,
+    lastProgressiveRollGameId,
+
     gameId: `game-${prev.gameNumber}-${Date.now()}`,
     status: "OPEN",
     calledNumbers: [],

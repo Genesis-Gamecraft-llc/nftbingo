@@ -53,6 +53,13 @@ export async function POST(req: Request) {
     }
 
     case "CLOSE_NEXT": {
+      // Roll the current game's jackpot portion into progressive ONCE before resetting per-game state
+      if (state.gameId && next.lastProgressiveRollGameId !== state.gameId) {
+        const carry = Number(state.currentGameJackpotSol || 0);
+        if (Number.isFinite(carry) && carry > 0) next.progressiveJackpotSol = Number(next.progressiveJackpotSol || 0) + carry;
+        next.lastProgressiveRollGameId = state.gameId;
+      }
+
       next.gameNumber = (state.gameNumber || 1) + 1;
       next.status = "CLOSED";
       next.calledNumbers = [];
