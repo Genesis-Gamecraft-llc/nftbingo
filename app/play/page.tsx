@@ -11,6 +11,7 @@ type BingoCard = {
   label: string;
   type: CardType;
   grid: number[][]; // 5x5, center FREE = 0
+  imageUrl?: string | null; // NFT art (optional)
 };
 
 type ClaimResult = "ACCEPTED" | "REJECTED";
@@ -63,6 +64,17 @@ function removeLast(arr: number[]) {
   if (arr.length === 0) return arr;
   return arr.slice(0, -1);
 }
+
+
+function letterForNumber(n: number): "B" | "I" | "N" | "G" | "O" {
+  // Standard bingo ranges: B 1-15, I 16-30, N 31-45, G 46-60, O 61-75
+  if (n <= 15) return "B";
+  if (n <= 30) return "I";
+  if (n <= 45) return "N";
+  if (n <= 60) return "G";
+  return "O";
+}
+
 
 /** ===== Pattern checks ===== */
 
@@ -284,35 +296,135 @@ function gameTypeLabel(t: GameType) {
   return "Blackout";
 }
 
-function BingoGrid({ grid, calledSet }: { grid: number[][]; calledSet: Set<number> }) {
-  const headers = ["B", "I", "N", "G", "O"];
+
+
+function pickImageUrl(cardLike: any): string | null {
+  // Try a few common shapes returned by NFT indexers (Helius, Metaplex, custom APIs).
+  const direct =
+    cardLike?.imageUrl ||
+    cardLike?.image ||
+    cardLike?.img ||
+    cardLike?.art ||
+    cardLike?.content?.links?.image ||
+    cardLike?.content?.metadata?.image ||
+    cardLike?.content?.json?.image ||
+    cardLike?.metadata?.image;
+
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+
+  const files = cardLike?.content?.files;
+  if (Array.isArray(files) && files.length) {
+    const u = files.find((f: any) => typeof f?.uri === "string" && f.uri.trim())?.uri;
+    if (typeof u === "string" && u.trim()) return u.trim();
+  }
+
+  return null;
+}
+
+function BingoCardArt({
+  card,
+  calledSet,
+}: {
+  card: BingoCard;
+  calledSet: Set<number>;
+}) {
+  // The NFT art already has the numbers printed.
+  // We only overlay marker "balls" for called numbers (and the FREE center).
+  const grid = card.grid;
+  const img = card.imageUrl || null;
+  // Prevent "blue placeholder flash" when switching cards by keeping the last
+  // successfully loaded image visible until the next one finishes loading.
+  const [shownImg, setShownImg] = useState<string | null>(img);
+  useEffect(() => {
+    // If there is no image for this card, clear the shown image.
+    if (!img) {
+      setShownImg(null);
+      return;
+    }
+    // If already showing this image, nothing to do.
+    if (shownImg === img) return;
+    let cancelled = false;
+    const preload = new Image();
+    preload.src = img;
+    preload.onload = () => {
+      if (!cancelled) setShownImg(img);
+    };
+    // Even if it errors, swap to avoid getting "stuck" on an old card.
+    preload.onerror = () => {
+      if (!cancelled) setShownImg(img);
+    };
+    return () => {
+      cancelled = true;
+    };
+  }, [img, shownImg]);
+
+  /**
+   * Marker calibration (percentages of the rendered image box).
+   * These values define the rectangle that contains the 5x5 number squares
+   * on your NFT card art.
+   *
+   * If you ever need micro-adjustments:
+   * - Increase left/right to move markers inward/outward horizontally.
+   * - Increase top/bottom to move markers downward/upward vertically.
+   */
+  const GRID_LEFT = 0.0905;
+  const GRID_RIGHT = 0.915;
+  const GRID_TOP = 0.455;
+  const GRID_BOTTOM = 0.972;
+
+  // Small per-art calibration (helps align the FREE center square perfectly)
+  const FREE_OFFSET_X = 0.000;
+  const FREE_OFFSET_Y = 0.000;
+
+  const cellW = (GRID_RIGHT - GRID_LEFT) / 5;
+  const cellH = (GRID_BOTTOM - GRID_TOP) / 5;
+
   return (
-    <div className="rounded-xl border border-slate-200 overflow-hidden">
-      <div className="grid grid-cols-5">
-        {headers.map((h) => (
-          <div key={h} className="bg-slate-900 text-white text-center font-extrabold py-2">
-            {h}
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-5">
-        {grid.flatMap((row, r) =>
-          row.map((v, c) => {
-            const free = r === 2 && c === 2;
-            const marked = free || v === 0 || calledSet.has(v);
-            return (
-              <div
-                key={`${r}-${c}`}
-                className={[
-                  "aspect-square flex items-center justify-center font-extrabold text-lg border-t border-slate-200 border-r border-slate-200 last:border-r-0",
-                  marked ? "bg-emerald-100 text-emerald-900" : "bg-white text-slate-900",
-                ].join(" ")}
-              >
-                {free ? "FREE" : v}
-              </div>
-            );
-          })
+    <div className="w-full">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        {shownImg ? (
+          <img
+            src={shownImg}
+            alt={card.label}
+            className="absolute inset-0 h-full w-full object-contain"
+            loading="lazy"
+            draggable={false}
+          />
+        ) : (
+          <div className="absolute inset-0 bg-transparent" />
         )}
+
+        {/* Marker balls ONLY (no fog overlay, no duplicate numbers) */}
+        <div className="absolute inset-0 pointer-events-none">
+          {grid.flatMap((row, r) =>
+            row.map((v, c) => {
+              const isFree = r === 2 && c === 2;
+              const isCalled = !isFree && v !== 0 && calledSet.has(v);
+              if (!isFree && !isCalled) return null;
+
+              let cx = GRID_LEFT + (c + 0.5) * cellW;
+              let cy = GRID_TOP + (r + 0.5) * cellH;
+              if (isFree) {
+                cx += FREE_OFFSET_X;
+                cy += FREE_OFFSET_Y;
+              }
+
+              return (
+                <span
+                  key={`${r}-${c}`}
+                  className="absolute bingo-ball-mini"
+                  style={{
+                    left: `${cx * 100}%`,
+                    top: `${cy * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                  title={isFree ? "FREE" : `${v}`}
+                  aria-label={isFree ? "FREE" : `${v}`}
+                />
+              );
+})
+          )}
+        </div>
       </div>
     </div>
   );
@@ -337,7 +449,7 @@ function CardCarousel({
   const isWin = isWinningByType(gameType, card.grid, calledSet);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-2">
       <div className="flex items-center justify-between mb-3">
         <div>
           <div className="font-semibold text-slate-900">{card.label}</div>
@@ -357,7 +469,7 @@ function CardCarousel({
         </div>
       </div>
 
-      <BingoGrid grid={card.grid} calledSet={calledSet} />
+      <BingoCardArt card={card} calledSet={calledSet} />
 
       {cards.length > 1 && (
         <div className="mt-4 flex items-center justify-between">
@@ -664,6 +776,7 @@ export default function PlayPage() {
             label: String(c.name || (type === "FOUNDERS" ? "Founders Series" : "Player Series")),
             type,
             grid,
+            imageUrl: pickImageUrl(c),
           };
         });
 
@@ -1194,12 +1307,24 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                       {calledNumbers.length === 0 ? (
                         <div className="text-slate-500">No numbers called yet.</div>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {calledNumbers.map((n) => (
-                            <span key={n} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-800">
-                              {n}
-                            </span>
-                          ))}
+                        <div>
+                          <div className="mb-3 flex flex-wrap items-center gap-3">
+                            <div className="text-xs font-semibold text-slate-600">Last call</div>
+                            <div className="bingo-ball text-lg font-black">
+                              {calledNumbers[calledNumbers.length - 1]}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              ({letterForNumber(calledNumbers[calledNumbers.length - 1])})
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {calledNumbers.map((n) => (
+                              <span key={n} className="bingo-ball-mini" title={`${letterForNumber(n)}${n}`}>
+                                {n}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1263,7 +1388,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                   <div className="text-sm text-slate-700">
                     Winners recorded: <span className="font-semibold text-slate-900">{winners.length}</span>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="rounded-xl border border-slate-200 bg-white p-2">
                     <div className="flex flex-col gap-2">
                       {winners.map((w, idx) => (
                         <div key={`${w.cardId}-${idx}`} className="flex items-center justify-between text-sm">
@@ -1498,7 +1623,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
         </div>
 
         <div className="mt-10 text-xs text-slate-500">
-          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.0-alpha
+          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.1-alpha
         </div>
       </div>
     </main>
