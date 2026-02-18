@@ -319,6 +319,10 @@ async function doPlayerMintOne() {
     if (!submit.ok) throw new Error(submit.error || "submit failed");
 
     const sig = submit.signature || submit.results?.find((r) => r.ok)?.signature || "";
+    if (!sig) {
+      const err = (submit as any).error || submit.results?.find((r) => !r.ok)?.error || "Transaction was not submitted";
+      throw new Error(err);
+    }
     const minted = (build as any).mints?.[0];
 
     setPlayerLastMint({
