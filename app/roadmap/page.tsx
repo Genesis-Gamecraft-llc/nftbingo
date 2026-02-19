@@ -109,10 +109,10 @@ export default function RoadmapPage() {
           { id: "p1-website-transition", label: "Website → Web App Transition (Wallet Integration Enabled)", status: "done" },
           { id: "p1-solana-devnet-mint", label: "End-to-End NFT Mint Flow Live (Web App ↔ Solana Devnet)", status: "done" },
           { id: "p1-metadata-resolution", label: "NFT Metadata Hosting + On-Chain URI Resolution Verified", status: "done" },
-          { id: "p1-founders-art", label: "Founders Series Card Art Completed", status: "in-progress" },
+          { id: "p1-founders-art", label: "Founders Series Card Art Completed", status: "done" },
           { id: "p1-community-growth", label: "Community growth focus to support live mint potential", status: "in-progress" },
-          { id: "p1-mint-program-deployed", label: "NFTBingo Mint Program Deployed (Solana Mainnet)", status: "in-progress" },
-          { id: "p1-mint-program-live", label: "Platinum Tier Founders Series mint live February 01, 2026 (Solana Mainnet)", status: "planned" },
+          { id: "p1-mint-program-deployed", label: "NFTBingo Mint Program Deployed (Solana Mainnet)", status: "done" },
+          { id: "p1-mint-program-live", label: "Platinum Tier Founders Series and FREE Players Series mint live February 01, 2026 (Solana Mainnet)", status: "done" },
         ],
       },
       {
@@ -124,13 +124,13 @@ export default function RoadmapPage() {
         items: [
           {
       id: "p2-gameplay-spec",
-      label: "Gameplay specification locked (rules + patterns + resolution)",
-      status: "planned",
+      label: "Gameplay system 1.0.0-alpha deployed on Solana Mainnet",
+      status: "done",
     },
     {
       id: "p2-card-utility",
       label: "Card utility & gameplay mechanics defined",
-      status: "planned",
+      status: "done",
     },
     {
       id: "p2-creator-launchpad-pipeline",
@@ -438,7 +438,7 @@ export default function RoadmapPage() {
 
         {/* Footer note */}
         <div className="mt-12 text-center text-sm text-slate-500">
-          © 2025 NFTBingo • Built on Solana • nftbingo.net • Roadmap version 1.1
+          © 2025 NFTBingo • Built on Solana • nftbingo.net • Roadmap version 1.2
         </div>
       </div>
     </main>
