@@ -332,31 +332,6 @@ function BingoCardArt({
   // We only overlay marker "balls" for called numbers (and the FREE center).
   const grid = card.grid;
   const img = card.imageUrl || null;
-  // Prevent "blue placeholder flash" when switching cards by keeping the last
-  // successfully loaded image visible until the next one finishes loading.
-  const [shownImg, setShownImg] = useState<string | null>(img);
-  useEffect(() => {
-    // If there is no image for this card, clear the shown image.
-    if (!img) {
-      setShownImg(null);
-      return;
-    }
-    // If already showing this image, nothing to do.
-    if (shownImg === img) return;
-    let cancelled = false;
-    const preload = new Image();
-    preload.src = img;
-    preload.onload = () => {
-      if (!cancelled) setShownImg(img);
-    };
-    // Even if it errors, swap to avoid getting "stuck" on an old card.
-    preload.onerror = () => {
-      if (!cancelled) setShownImg(img);
-    };
-    return () => {
-      cancelled = true;
-    };
-  }, [img, shownImg]);
 
   /**
    * Marker calibration (percentages of the rendered image box).
@@ -382,16 +357,16 @@ function BingoCardArt({
   return (
     <div className="w-full">
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        {shownImg ? (
+        {img ? (
           <img
-            src={shownImg}
+            src={img}
             alt={card.label}
             className="absolute inset-0 h-full w-full object-contain"
             loading="lazy"
             draggable={false}
           />
         ) : (
-          <div className="absolute inset-0 bg-transparent" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.35),transparent_55%),radial-gradient(circle_at_80%_30%,rgba(16,185,129,0.28),transparent_55%),radial-gradient(circle_at_50%_85%,rgba(236,72,153,0.22),transparent_55%)]" />
         )}
 
         {/* Marker balls ONLY (no fog overlay, no duplicate numbers) */}
@@ -1051,6 +1026,24 @@ await confirmSignatureByPolling(connection, sig, 60_000);
     if (entered.length) setSelectedCards(entered);
   }, [enteredCardIds, walletCards, selectedCards.length]);
 
+  // ✅ Rehydrate paid/entered cards after refresh (player re-opens page mid-game)
+  // Server remembers enteredCardIds, but the client must map them back to full card objects once walletCards load.
+  useEffect(() => {
+    if (!wallet.connected || !walletAddress) {
+      setEnteredCards([]);
+      return;
+    }
+    if (!enteredCardIds.length) {
+      setEnteredCards([]);
+      return;
+    }
+
+    const entered = walletCards.filter((c) => enteredCardIds.includes(c.id));
+    // If walletCards haven't loaded yet, keep previous enteredCards until we can resolve them.
+    if (entered.length) setEnteredCards(entered);
+  }, [wallet.connected, walletAddress, enteredCardIds, walletCards]);
+
+
 
 
   // Derived: winning cards (use paid entries once locked; fallback to selected for admin testing)
@@ -1623,7 +1616,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
         </div>
 
         <div className="mt-10 text-xs text-slate-500">
-          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.1-alpha
+          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.2-alpha
         </div>
       </div>
     </main>

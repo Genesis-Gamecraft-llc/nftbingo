@@ -25,16 +25,16 @@ export default function Home() {
 
         <div className="relative mt-10 flex flex-wrap justify-center gap-4 z-10">
           <a
-            href="/join-community"
+            href="/mint"
             className="rounded-xl bg-white text-pink-600 font-semibold px-8 py-4 shadow hover:bg-slate-100"
           >
-            Join Us
+            Mint NFTBingo Cards
           </a>
           <a
-            href="/whitepaper"
+            href="/play"
             className="rounded-xl bg-white text-pink-600 font-semibold px-8 py-4 shadow hover:bg-slate-100"
           >
-            Read Whitepaper
+            Play NFTBingo
           </a>
         </div>
       </section>
@@ -76,7 +76,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-slate-200 py-8 text-center text-slate-500 text-sm">
-        © {new Date().getFullYear()} NFTBingo • Built on Solana • nftbingo.net
+        © {new Date().getFullYear()} NFTBingo • Built on Solana • NFTBingo.net
       </footer>
     </main>
   );
