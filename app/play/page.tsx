@@ -1384,7 +1384,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
               </div>
 
               <div className="nbg-pill nbg-pill-jackpot">
-                <div className="nbg-pill-label">PROGRESSIVE JACKPOT</div>
+                <div className="nbg-pill-label">MEGA JACKPOT</div>
                 <div className="nbg-pill-value">{formatSol(jackpotPot)} SOL</div>
               </div>
 </div>
@@ -1879,7 +1879,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
         </div>
 
         <div className="mt-18 text-xs text-white/60 text-center max-w-4xl mx-auto leading-relaxed">
-          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.6-alpha
+          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.7-alpha
         </div>
       </div>
 
