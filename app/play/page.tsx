@@ -586,6 +586,11 @@ export default function PlayPage() {
   // Entry pricing
   const [entryFeeSol, setEntryFeeSol] = useState<number>(0.05);
   const feeEditingRef = useRef(false);
+  // When admins change the entry fee, the 1.5s server poll can "snap" the input back to the
+  // previous server value before the backend write lands. Track the most recent local fee edit
+  // and prefer it briefly until the server reflects the same value.
+  const feeLocalOverrideRef = useRef<{ value: number; at: number } | null>(null);
+
   const feeSaveTimerRef = useRef<number | null>(null);
   const feeLastSentRef = useRef<number>(-1);
   const typeEditingRef = useRef(false);
@@ -672,7 +677,27 @@ export default function PlayPage() {
     setGameNumber(s.gameNumber);
     if (!typeEditingRef.current) setGameType(s.gameType);
     setStatus(s.status);
-    if (!feeEditingRef.current) setEntryFeeSol(s.entryFeeSol);
+    if (!feeEditingRef.current) {
+      const local = feeLocalOverrideRef.current;
+      if (local) {
+        const age = Date.now() - local.at;
+        const serverFee = typeof s.entryFeeSol === "number" ? s.entryFeeSol : Number((s as any).entryFeeSol);
+        // If server has caught up (or value is effectively the same), clear the override.
+        if (Number.isFinite(serverFee) && Math.abs(serverFee - local.value) < 1e-9) {
+          feeLocalOverrideRef.current = null;
+          setEntryFeeSol(serverFee);
+        } else if (age < 8000) {
+          // Keep showing the locally edited value for a short window.
+          setEntryFeeSol(local.value);
+        } else {
+          // Give up after a few seconds and trust the server again.
+          feeLocalOverrideRef.current = null;
+          setEntryFeeSol(serverFee);
+        }
+      } else {
+        setEntryFeeSol(s.entryFeeSol);
+      }
+    }
     setCalledNumbers(s.calledNumbers || []);
     setWinners((s.winners || []).map((w) => ({ cardId: w.cardId, wallet: w.wallet, isFounders: w.isFounders })));
 
@@ -714,6 +739,11 @@ export default function PlayPage() {
   };
 
   const queueFeeSave = (nextFee: number, immediate = false) => {
+    // Mark this value as locally edited so the server poll doesn’t immediately overwrite it.
+    if (Number.isFinite(nextFee)) {
+      feeLocalOverrideRef.current = { value: nextFee, at: Date.now() };
+    }
+
     // Avoid spamming identical values
     if (Number.isFinite(nextFee) && feeLastSentRef.current === nextFee && !immediate) return;
 
@@ -1747,7 +1777,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                        setClaimResult({ result: "REJECTED", message: err?.message || "Failed to set game type." });
                      }
                    }}
-                    className="mt-2 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
+                    className="mt-2 w-full rounded-lg border border-white/15 bg-slate/10 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
                   >
                     <option value="STANDARD">Standard</option>
                     <option value="FOUR_CORNERS">4 Corners</option>
@@ -1879,7 +1909,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
         </div>
 
         <div className="mt-18 text-xs text-white/60 text-center max-w-4xl mx-auto leading-relaxed">
-          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.7-alpha
+          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.8-alpha
         </div>
       </div>
 
