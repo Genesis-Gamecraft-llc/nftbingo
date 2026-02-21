@@ -300,10 +300,10 @@ body {
     border-radius: 9999px;
     /* Blue-tinted glass ball that still lets the card numbers show through */
     background: radial-gradient(circle at 30% 30%,
-      rgba(219, 234, 254, 0.92),
-      rgba(147, 197, 253, 0.55) 30%,
-      rgba(59, 130, 246, 0.28) 60%,
-      rgba(30, 64, 175, 0.18) 100%);
+      rgba(219, 234, 254, 0.95),
+      rgba(147, 197, 253, 0.85) 30%,
+      rgba(59, 130, 246, 0.65) 60%,
+      rgba(30, 64, 175, 0.45) 100%);
     border: 1px solid rgba(37, 99, 235, 0.45);
     box-shadow: 0 10px 18px rgba(2, 6, 23, 0.16);
     color: rgba(15, 23, 42, 0.95);

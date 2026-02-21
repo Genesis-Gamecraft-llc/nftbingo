@@ -663,8 +663,6 @@ export default function PlayPage() {
   // Winner list (MVP local)
   const [winners, setWinners] = useState<Array<{ cardId: string; wallet: string; isFounders: boolean }>>([]);
 
-  console.log("WINNERS DEBUG", winners);
-
   // Wallet
   const wallet = useWallet();
   const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
@@ -1371,35 +1369,27 @@ await confirmSignatureByPolling(connection, sig, 60_000);
 
             <div className="flex flex-wrap items-center gap-2 md:gap-3">
               <div className="nbg-pill">
-                <div className="nbg-pill-label">STATUS</div>
+                <div className="nbg-pill-label">GAME STATUS</div>
                 <div className="nbg-pill-value">{status}</div>
               </div>
 
               <div className="nbg-pill">
-                <div className="nbg-pill-label">TOTAL POT</div>
-                <div className="nbg-pill-value">{formatSol(totalPot)} SOL</div>
-              </div>
-
-              <div className="nbg-pill nbg-pill-jackpot">
-                <div className="nbg-pill-label">JACKPOT</div>
-                <div className="nbg-pill-value">{formatSol(jackpotPot)} SOL</div>
+                <div className="nbg-pill-label">PLAYERS POT</div>
+                <div className="nbg-pill-value">{formatSol(playerSeriesPot)} SOL</div>
               </div>
 
               <div className="nbg-pill">
-                <div className="nbg-pill-label">WALLET</div>
-                <div className="nbg-pill-value">{wallet?.publicKey ? shortAddr(wallet.publicKey.toBase58()) : "Not connected"}</div>
+                <div className="nbg-pill-label">FOUNDERS POT</div>
+                <div className="nbg-pill-value">{formatSol(foundersSeriesPot)} SOL</div>
               </div>
-            </div>
+
+              <div className="nbg-pill nbg-pill-jackpot">
+                <div className="nbg-pill-label">PROGRESSIVE JACKPOT</div>
+                <div className="nbg-pill-value">{formatSol(jackpotPot)} SOL</div>
+              </div>
+</div>
           </div>
         </header>
-
-        {/* Pots */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <PotCard title="Player Series Pot" value={`${formatSol(playerSeriesPot)} SOL`} />
-          <PotCard title="Founders Series Pot" value={`${formatSol(foundersSeriesPot)} SOL`} />
-          <PotCard title="Progressive Jackpot" value={`${formatSol(jackpotPot)} SOL`} />
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
           {/* Left main */}
           <div className="md:col-span-2 rounded-2xl border border-white/10 bg-white/10 backdrop-blur-xl shadow-[0_18px_45px_rgba(0,0,0,0.35)] p-6 md:p-8">
@@ -1416,7 +1406,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
 
               <div className="text-sm text-white/80">
                 Selected entries: <span className="font-semibold text-white">{selectedCards.length}</span>
-                <div className="text-xs text-white/60 mt-1">
+                <div className="text-xs text-white/60 mt-1 break-words">
                   Paid entries: <span className="font-semibold text-white">{enteredCards.length}</span>
                   {entriesLocked ? " (locked)" : ""}
                 </div>
@@ -1518,9 +1508,9 @@ await confirmSignatureByPolling(connection, sig, 60_000);
               <div className="text-sm text-white/65">
                 Games can only be entered when they are showing the status as <span className="font-semibold text-white">OPEN</span>.
                 {lastEntrySig ? (
-                  <div className="text-xs text-white/60 mt-1">
+                  <div className="text-xs text-white/60 mt-1 break-words">
                     Last entry: {formatSol(lastEntryTotalSol)} SOL • Tx:{" "}
-                    <span className="font-mono">{lastEntrySig}</span>
+                    <span className="font-mono break-all">{lastEntrySig}</span>
                   </div>
                 ) : null}
               </div>
@@ -1590,7 +1580,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                         {claimWindowOpenAt ? `${claimWindowSecondsLeft}s` : "—"}
                       </span>
                     </div>
-                    <div className="text-xs text-white/60 mt-1">Claim window closes after the next number is called or 60 seconds after a winning Bingo has been verified.</div>
+                    <div className="text-xs text-white/60 mt-1 break-words">Claim window closes after the next number is called or 60 seconds after a winning Bingo has been verified.</div>
                   </div>
 
                   {/* Claim button */}
@@ -1656,10 +1646,12 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                             <div className="font-mono text-white break-all">{w.cardId}</div>
                           </div>
 
-                          <div>
-                            <div className="text-[11px] uppercase tracking-wide text-slate-500">Wallet</div>
-                            <div className="font-mono text-white break-all">{w.wallet}</div>
-                          </div>
+                          {isAdmin ? (
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-500">Wallet</div>
+                              <div className="font-mono text-white break-all">{w.wallet}</div>
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -1755,7 +1747,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                        setClaimResult({ result: "REJECTED", message: err?.message || "Failed to set game type." });
                      }
                    }}
-                    className="nbg-select mt-2 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
+                    className="mt-2 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
                   >
                     <option value="STANDARD">Standard</option>
                     <option value="FOUR_CORNERS">4 Corners</option>
@@ -1869,7 +1861,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                         onClick={() => adminCallNumber(n)}
                         disabled={disabled}
                         className={[
-                          "rounded-lg px-2 py-2 text-xs font-semibold border transition-all",
+                          "rounded-lg aspect-square flex items-center justify-center px-0 py-0 text-xs font-semibold leading-none border transition-all",
                           picked
                             ? "bg-slate-900 text-white border-white/20"
                             : "bg-white/10 text-white border-white/15 hover:bg-white/15",
@@ -1887,7 +1879,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
         </div>
 
         <div className="mt-18 text-xs text-white/60 text-center max-w-4xl mx-auto leading-relaxed">
-          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.4-alpha
+          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.6-alpha
         </div>
       </div>
 
@@ -2026,25 +2018,21 @@ await confirmSignatureByPolling(connection, sig, 60_000);
           font-weight: 900;
           font-size: 12px;
           line-height: 1;
-          color: rgba(255,255,255,0.96);
-          background: rgba(255,255,255,0.12);
-          border: 1px solid rgba(255,255,255,0.16);
-          box-shadow: 0 10px 22px rgba(0,0,0,0.35);
+          color: rgba(255,255,255,0.98);
+          /* Stained-glass mark: high contrast on top of card art */
+          background: radial-gradient(circle at 30% 28%,
+  rgba(255,255,255,0.85) 0%,
+  rgba(255,255,255,0.45) 18%,
+  rgba(236,72,153,0.85) 35%,
+  rgba(59,130,246,0.75) 80%,
+  rgba(0,0,0,0.65) 100%);
+          border: 1px solid rgba(255,255,255,0.28);
+          box-shadow:
+            0 0 0 2px rgba(236,72,153,0.14),
+            0 0 18px rgba(236,72,153,0.22),
+            0 0 18px rgba(59,130,246,0.18),
+            0 10px 22px rgba(0,0,0,0.40);
         }
-
-        /* Dark dropdown options (fix white menu) */
-        .nbg-select{
-          color: rgba(255,255,255,0.95);
-          background-color: rgba(255,255,255,0.10);
-        }
-        .nbg-select option{
-          background-color: #0b1220;
-          color: rgba(255,255,255,0.95);
-        }
-        .nbg-select option:checked{
-          background-color: #1f2937;
-        }
-
       `}</style>
 
     </main>
