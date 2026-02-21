@@ -34,9 +34,18 @@ export async function POST(req: Request) {
 
   state.winners = state.winners || [];
     const isFounders = (() => {
-    const m = (entry as any)?.cardTypesById;
-    const t = m && typeof m === "object" ? String((m as any)[cardId] || "") : "";
-    return t.toUpperCase() === "FOUNDERS";
+    // Preferred: mapping saved at /enter time
+    const map = (entry as any)?.cardTypesById;
+    const tFromMap = map && typeof map === "object" ? String((map as any)[cardId] || "") : "";
+
+    // Fallback (older/alternate shapes): parallel array of cardTypes aligned to cardIds
+    const ids: string[] = Array.isArray((entry as any)?.cardIds) ? (entry as any).cardIds.map((x: any) => String(x)) : [];
+    const types: string[] = Array.isArray((entry as any)?.cardTypes) ? (entry as any).cardTypes.map((x: any) => String(x)) : [];
+    const idx = ids.indexOf(cardId);
+    const tFromArr = idx >= 0 && idx < types.length ? String(types[idx] || "") : "";
+
+    const t = (tFromMap || tFromArr || "").toUpperCase();
+    return t === "FOUNDERS";
   })();
 
   state.winners.push({ cardId, wallet, isFounders, ts: now });

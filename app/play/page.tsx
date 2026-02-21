@@ -1,8 +1,44 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+
+
+// Collections allowed to play (from env)
+const FOUNDERS_COLLECTION_MINT = (process.env.NEXT_PUBLIC_FOUNDERS_COLLECTION_MINT || "").trim();
+const PLAYER_SERIES_COLLECTION_MINT = (process.env.NEXT_PUBLIC_PLAYER_SERIES_COLLECTION_MINT || "").trim();
+const VIP_COLLECTION_MINT = (process.env.NEXT_PUBLIC_VIP_COLLECTION_MINT || "").trim();
+
+const eqPk = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+const shortAddr = (s?: string, n = 4) => {
+  if (!s) return "";
+  const t = s.trim();
+  if (t.length <= n * 2 + 3) return t;
+  return `${t.slice(0, n)}…${t.slice(-n)}`;
+};
+
+const getCollectionMint = (c: any): string => {
+  // Support a few common shapes depending on indexer/API
+  const v =
+    c?.collectionMint ??
+    c?.collection_mint ??
+    c?.collectionAddress ??
+    c?.collection_address ??
+    c?.collection ??
+    c?.collectionId ??
+    c?.collection_id ??
+    c?.metadata?.collection ??
+    c?.onchain?.collection ??
+    "";
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object") {
+    return String(v.mint ?? v.address ?? v.key ?? "");
+  }
+  return "";
+};
 
 type CardType = "PLAYER" | "FOUNDERS";
 
@@ -283,9 +319,9 @@ function shuffle<T>(arr: T[], rng: () => number) {
 
 function PotCard({ title, value }: { title: string; value: string }) {
   return (
-    <div className="bg-white rounded-2xl shadow p-5 border border-slate-100">
-      <div className="text-sm text-slate-600">{title}</div>
-      <div className="mt-2 text-2xl font-extrabold text-slate-900">{value}</div>
+    <div className="rounded-2xl border border-white/10 bg-white/10 backdrop-blur-xl shadow-[0_18px_45px_rgba(0,0,0,0.35)] p-5">
+      <div className="text-sm text-white/70">{title}</div>
+      <div className="mt-2 text-2xl font-extrabold text-white">{value}</div>
     </div>
   );
 }
@@ -356,7 +392,7 @@ function BingoCardArt({
 
   return (
     <div className="w-full">
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm shadow-[0_12px_35px_rgba(0,0,0,0.35)]">
         {img ? (
           <img
             src={img}
@@ -416,19 +452,41 @@ function CardCarousel({
 }) {
   const [idx, setIdx] = useState(0);
 
+  // Keep the user on the same card when the cards array is refreshed (e.g., after each call/state poll).
+  // We track the current card's stable id and restore the index if that card still exists.
+  const activeCardIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (idx >= cards.length) setIdx(0);
-  }, [cards.length, idx]);
+    const current = cards[idx];
+    if (current?.id) activeCardIdRef.current = current.id;
+  }, [cards, idx]);
+
+  useEffect(() => {
+    if (!cards.length) {
+      setIdx(0);
+      return;
+    }
+    const wanted = activeCardIdRef.current;
+    if (wanted) {
+      const found = cards.findIndex((c) => c.id === wanted);
+      if (found >= 0 && found !== idx) {
+        setIdx(found);
+        return;
+      }
+    }
+    // Clamp without hard-resetting to 0 unless needed.
+    if (idx >= cards.length) setIdx(cards.length - 1);
+  }, [cards]);
 
   const card = cards[idx];
   const isWin = isWinningByType(gameType, card.grid, calledSet);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-2">
+    <div className="rounded-2xl border border-white/10 bg-white/10 backdrop-blur-xl shadow-[0_18px_45px_rgba(0,0,0,0.35)] p-3">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div className="font-semibold text-slate-900">{card.label}</div>
-          <div className="text-xs text-slate-600 mt-1">
+          <div className="font-semibold text-white">{card.label}</div>
+          <div className="text-xs text-white/65 mt-1">
             {card.type === "FOUNDERS" ? "⭐ Founders Series" : "🎫 Player Series"} • Card {idx + 1} of {cards.length}
           </div>
         </div>
@@ -451,14 +509,14 @@ function CardCarousel({
           <button
             type="button"
             onClick={() => setIdx((i) => (i - 1 + cards.length) % cards.length)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+            className="rounded-lg border border-white/15 bg-white/10 px-3 py-1 text-sm font-semibold text-white hover:bg-white/15"
           >
             Prev
           </button>
           <button
             type="button"
             onClick={() => setIdx((i) => (i + 1) % cards.length)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+            className="rounded-lg border border-white/15 bg-white/10 px-3 py-1 text-sm font-semibold text-white hover:bg-white/15"
           >
             Next
           </button>
@@ -466,7 +524,7 @@ function CardCarousel({
       )}
 
       <div className="mt-3 text-xs text-slate-500">
-        Game type: <span className="font-semibold text-slate-900">{gameTypeLabel(gameType)}</span>
+        Game type: <span className="font-semibold text-white">{gameTypeLabel(gameType)}</span>
       </div>
     </div>
   );
@@ -558,13 +616,13 @@ export default function PlayPage() {
   const [enteredCards, setEnteredCards] = useState<BingoCard[]>([]); // ✅ paid entries only
   const [maxCards] = useState<number>(5);
 
-  // Wallet inventory (fetched from /api/cards/owned; falls back to demo if not connected)
-  const [walletCards, setWalletCards] = useState<BingoCard[]>(() => [
-    demoCard("Founders Series Card (Demo)", "FOUNDERS", 41),
-    demoCard("Player Series Card (Demo)", "PLAYER", 101),
-  ]);
+  // Wallet inventory (fetched from /api/cards/owned)
+  const [walletCards, setWalletCards] = useState<BingoCard[]>([]);
   const [cardsLoading, setCardsLoading] = useState<boolean>(false);
   const [cardsError, setCardsError] = useState<string>("");
+  const [cardsRefreshNonce, setCardsRefreshNonce] = useState<number>(0);
+  const refreshCards = () => setCardsRefreshNonce((n) => n + 1);
+
 
   // Payment/entry lock for this game
   const [entriesLocked, setEntriesLocked] = useState<boolean>(false);
@@ -605,6 +663,8 @@ export default function PlayPage() {
   // Winner list (MVP local)
   const [winners, setWinners] = useState<Array<{ cardId: string; wallet: string; isFounders: boolean }>>([]);
 
+  console.log("WINNERS DEBUG", winners);
+
   // Wallet
   const wallet = useWallet();
   const walletAddress = useMemo(() => wallet.publicKey?.toBase58() || "", [wallet.publicKey]);
@@ -629,15 +689,20 @@ export default function PlayPage() {
 
     setClaimWindowEndsAt(s.claimWindowEndsAt ?? null);
     setLastClaim(s.lastClaim ?? null);
-
-    if (s.my?.enteredCardIds) {
-      setEnteredCardIds(s.my.enteredCardIds);
-      setLastEntrySig(String(s.my.lastSig || ""));
-      if (typeof s.my.lastTotalSol === "number") setLastEntryTotalSol(s.my.lastTotalSol);
-      setEntriesLocked((s.my.enteredCardIds?.length || 0) > 0);
-    } else {
+    // Preserve wallet-specific "my" state unless the server explicitly includes it.
+    // Some admin endpoints may return the global game state without the `my` field, which would otherwise
+    // wipe local wallet UI (Pay button state, selected/entered indicators) and cause a full-page "flash".
+    if (s.my && Array.isArray((s as any).my.enteredCardIds)) {
+      setEnteredCardIds((s as any).my.enteredCardIds);
+      setLastEntrySig(String((s as any).my.lastSig || ""));
+      if (typeof (s as any).my.lastTotalSol === "number") setLastEntryTotalSol((s as any).my.lastTotalSol);
+      setEntriesLocked((((s as any).my.enteredCardIds?.length) || 0) > 0);
+    } else if (Object.prototype.hasOwnProperty.call(s as any, "my")) {
+      // If the server explicitly says there is no `my` state, clear it.
       setEnteredCardIds([]);
       setEntriesLocked(false);
+      setLastEntrySig("");
+      setLastEntryTotalSol(0);
     }
   };
 
@@ -721,26 +786,133 @@ export default function PlayPage() {
   useEffect(() => {
     let cancelled = false;
 
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
     async function run() {
+      // If disconnected, clear inventory and any stale errors/loading.
       if (!wallet.connected || !walletAddress) {
+        setWalletCards([]);
         setCardsError("");
         setCardsLoading(false);
-        // keep demo cards when disconnected
         return;
       }
-      setCardsLoading(true);
+
+      const cacheKey = `nftbingo:ownedCards:${walletAddress}`;
+      const TTL_MS = 5 * 60 * 1000;
+
+      const readCache = (): BingoCard[] | null => {
+        try {
+          const raw = localStorage.getItem(cacheKey);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") return null;
+          const ts = Number(parsed.ts || 0);
+          if (!ts || Date.now() - ts > TTL_MS) return null;
+          const cards = Array.isArray(parsed.cards) ? (parsed.cards as BingoCard[]) : null;
+          return cards && cards.length ? cards : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const writeCache = (cards: BingoCard[]) => {
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), cards }));
+        } catch {
+          // ignore storage quota / private mode
+        }
+      };
+
+      const cached = readCache();
+      if (cached && !cancelled) {
+        // Immediately show cached cards to avoid a blank/placeholder state.
+        setWalletCards(cached);
+        setCardsError("");
+      }
+
+      // Only show the "Loading..." text when we don't already have cards.
+      if (!cancelled) setCardsLoading(!(cached && cached.length));
+
       setCardsError("");
 
-      try {
-        const res = await fetch(`/api/cards/owned?owner=${encodeURIComponent(walletAddress)}`, { cache: "no-store" });
-        const j = await res.json();
-        if (!j?.ok) throw new Error(j?.error || "Failed to load cards");
+      const fetchWithRetry = async () => {
+        const url = `/api/cards/owned?owner=${encodeURIComponent(walletAddress)}`;
+        let lastErr: any = null;
 
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            const res = await fetch(url, { cache: "no-store" });
+
+            // If you get rate limited, back off and retry.
+            if (res.status === 429) {
+              const wait = 600 * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
+              await sleep(wait);
+              lastErr = new Error("Rate limited (429).");
+              continue;
+            }
+
+            const j = await res.json().catch(() => null);
+            if (!res.ok) {
+              throw new Error(j?.error || `Failed to load cards (${res.status})`);
+            }
+            if (!j?.ok) throw new Error(j?.error || "Failed to load cards");
+            return j;
+          } catch (e: any) {
+            lastErr = e;
+            // small backoff for transient network errors
+            await sleep(250 * Math.pow(2, attempt));
+          }
+        }
+
+        throw lastErr || new Error("Failed to load cards");
+      };
+
+      try {
+        const j = await fetchWithRetry();
         const owned: any[] = Array.isArray(j.cards) ? j.cards : [];
 
-        const mapped: BingoCard[] = owned.map((c) => {
-          const series = String(c.series || "").toUpperCase();
-          const type: CardType = series === "FOUNDERS" ? "FOUNDERS" : "PLAYER";
+        // If the API returns extra NFTs, keep only collections we allow (when collection mint is available).
+        const allowedMints = [FOUNDERS_COLLECTION_MINT, PLAYER_SERIES_COLLECTION_MINT, VIP_COLLECTION_MINT].filter(Boolean);
+
+        const filteredOwned = owned.filter((c) => {
+          const cm = getCollectionMint(c);
+          if (!cm) return true; // can't verify; keep (fallback heuristics may classify)
+          if (!allowedMints.length) return true;
+          return allowedMints.some((m) => eqPk(cm, m));
+        });
+
+        const mapped: BingoCard[] = filteredOwned.map((c) => {
+
+          // Be defensive: different indexers/APIs may return "Founders", "Founders Series",
+          // or only provide a tier like "Platinum"/"Gold"/"Silver".
+          const seriesRaw = String(c.series ?? c.cardSeries ?? c.collection ?? "");
+          const tierRaw = String(
+            c.tier ??
+              c.attributes?.find?.((a: any) => a?.trait_type === "Tier")?.value ??
+              ""
+          );
+
+          
+          const collectionMint = getCollectionMint(c);
+
+          // Source of truth: collection mint (preferred).
+          // Falls back to metadata heuristics only if collection mint is missing.
+          const isFoundersByCollection =
+            !!FOUNDERS_COLLECTION_MINT && eqPk(collectionMint, FOUNDERS_COLLECTION_MINT);
+
+          // Optional: treat VIP as founders-style bonus if you want (currently NOT counted as founders).
+          // const isVipByCollection = !!VIP_COLLECTION_MINT && eqPk(collectionMint, VIP_COLLECTION_MINT);
+
+          const isFoundersByMeta =
+            /founder/i.test(seriesRaw) ||
+            /platinum|gold|silver/i.test(tierRaw) ||
+            /founder/i.test(String(c.name ?? "")) ||
+            /founder/i.test(String(c.symbol ?? ""));
+
+          const isFounders = isFoundersByCollection || (!collectionMint && isFoundersByMeta);
+
+          const type: CardType = isFounders ? "FOUNDERS" : "PLAYER";
+
 
           const grid =
             numbersByLetterToGrid(c.numbersByLetter) ||
@@ -756,11 +928,21 @@ export default function PlayPage() {
         });
 
         if (!cancelled) {
-          setWalletCards(mapped.length ? mapped : []);
+          setWalletCards(mapped);
+          writeCache(mapped);
+
           if (!mapped.length) setCardsError("No eligible NFTBingo cards found in this wallet.");
         }
       } catch (e: any) {
-        if (!cancelled) setCardsError(e?.message ?? "Failed to load cards");
+        if (cancelled) return;
+
+        // If we have cached cards, keep them and just show a soft warning.
+        const msg = e?.message ?? "Failed to load cards";
+        if (cached && cached.length) {
+          setCardsError("If you are unable to see your cards, please click the Refresh Cards button above. If that doesn't work, try refreshing the page.");
+        } else {
+          setCardsError(msg);
+        }
       } finally {
         if (!cancelled) setCardsLoading(false);
       }
@@ -770,7 +952,15 @@ export default function PlayPage() {
     return () => {
       cancelled = true;
     };
-  }, [wallet.connected, walletAddress]);
+  }, [wallet.connected, walletAddress, cardsRefreshNonce]);
+  // When walletCards refresh, keep selected/entered card objects in sync so imageUrl updates
+  useEffect(() => {
+    if (!walletCards.length) return;
+    const byId = new Map(walletCards.map((c) => [c.id, c]));
+    setSelectedCards((prev) => prev.map((c) => byId.get(c.id) || c));
+    setEnteredCards((prev) => prev.map((c) => byId.get(c.id) || c));
+  }, [walletCards]);
+
 
   function openClaimWindow() {
     const openedAt = Date.now();
@@ -981,6 +1171,9 @@ await confirmSignatureByPolling(connection, sig, 60_000);
             signature: sig,
             totalSol,
             cardIds: selectedCards.map((c) => c.id),
+            // Optional hints so backend can correctly attribute Founders vs Player cards without extra on-chain lookups.
+            // Backend should ignore if unused.
+            cardMeta: selectedCards.map((c) => ({ cardId: c.id, type: c.type })),
           }),
         });
       } catch (e: any) {
@@ -1096,6 +1289,10 @@ await confirmSignatureByPolling(connection, sig, 60_000);
         body: JSON.stringify({
           wallet: walletAddress,
           cardId: claimedCard.id,
+          // Optional hints so backend can correctly attribute Founders vs Player cards.
+          // Backend should ignore if unused.
+          cardType: claimedCard.type,
+          isFounders: claimedCard.type === "FOUNDERS",
         }),
       });
 
@@ -1137,21 +1334,64 @@ await confirmSignatureByPolling(connection, sig, 60_000);
   }, [winners, playerSeriesPot, foundersBonus]);
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 py-10">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h1 className="text-4xl font-extrabold text-slate-900">Welcome to the NFTBingo game page</h1>
-            <div className="text-sm text-slate-600 mt-1">
-              Game #{gameNumber} • Game Type: <span className="font-semibold">{gameTypeLabel(gameType)}</span> • Game Status:{" "}
-              <span className="font-semibold">{status}</span>
+    <main className="min-h-screen nbg-game-bg">
+      <div aria-hidden="true" className="nbg-bg-layers">
+        <div className="nbg-bg-orb nbg-orb-1" />
+        <div className="nbg-bg-orb nbg-orb-2" />
+        <div className="nbg-bg-orb nbg-orb-3" />
+        <div className="nbg-bg-grid" />
+        <div className="nbg-bg-vignette" />
+      </div>
+      <div className="relative max-w-6xl mx-auto px-4 py-8">
+        <header className="mb-6 rounded-2xl border border-white/10 bg-white/10 backdrop-blur-xl shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between px-4 py-4 md:px-6">
+            <div className="flex items-center gap-3">
+              <div className="nbg-logo-wrap">
+                <Image
+                  src="/images/NFTBingoLogo.png"
+                  alt="NFTBingo"
+                  width={180}
+                  height={52}
+                  priority
+                  className="nbg-logo-img"
+                />
+              </div>
+              <div className="leading-tight">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">NFTBingo</h1>
+                  {isAdmin ? (
+                    <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-amber-400/20 text-amber-200 border border-amber-300/30">ADMIN</span>
+                  ) : null}
+                </div>
+                <div className="text-xs md:text-sm text-white/70">
+                  Game #{gameNumber} • {gameTypeLabel(gameType)}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+              <div className="nbg-pill">
+                <div className="nbg-pill-label">STATUS</div>
+                <div className="nbg-pill-value">{status}</div>
+              </div>
+
+              <div className="nbg-pill">
+                <div className="nbg-pill-label">TOTAL POT</div>
+                <div className="nbg-pill-value">{formatSol(totalPot)} SOL</div>
+              </div>
+
+              <div className="nbg-pill nbg-pill-jackpot">
+                <div className="nbg-pill-label">JACKPOT</div>
+                <div className="nbg-pill-value">{formatSol(jackpotPot)} SOL</div>
+              </div>
+
+              <div className="nbg-pill">
+                <div className="nbg-pill-label">WALLET</div>
+                <div className="nbg-pill-value">{wallet?.publicKey ? shortAddr(wallet.publicKey.toBase58()) : "Not connected"}</div>
+              </div>
             </div>
           </div>
-
-          {isAdmin ? (
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-900 text-white">ADMIN</span>
-          ) : null}
-        </div>
+        </header>
 
         {/* Pots */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -1162,36 +1402,49 @@ await confirmSignatureByPolling(connection, sig, 60_000);
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
           {/* Left main */}
-          <div className="md:col-span-2 bg-white rounded-2xl shadow p-6 md:p-8">
-            <h2 className="text-2xl font-bold text-slate-900">Join & Play</h2>
-            <p className="text-slate-700 mt-1">
+          <div className="md:col-span-2 rounded-2xl border border-white/10 bg-white/10 backdrop-blur-xl shadow-[0_18px_45px_rgba(0,0,0,0.35)] p-6 md:p-8">
+            <h2 className="text-2xl font-bold text-white">Join & Play</h2>
+            <p className="text-white/80 mt-1">
               Entry fees are set before the game starts. You can enter up to {maxCards} cards per game with additional entry fees for each card entered.
             </p>
 
-            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 flex items-center justify-between">
+            <div className="mt-6 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md p-4 flex items-center justify-between shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
               <div>
-                <div className="text-sm text-slate-600">Entry Fee (per card)</div>
-                <div className="text-xl font-extrabold text-slate-900">{formatSol(entryFeeSol)} SOL</div>
+                <div className="text-sm text-white/70">Entry Fee (per card)</div>
+                <div className="text-xl font-extrabold text-white">{formatSol(entryFeeSol)} SOL</div>
               </div>
 
-              <div className="text-sm text-slate-600">
-                Selected entries: <span className="font-semibold text-slate-900">{selectedCards.length}</span>
-                <div className="text-xs text-slate-500 mt-1">
-                  Paid entries: <span className="font-semibold text-slate-900">{enteredCards.length}</span>
+              <div className="text-sm text-white/80">
+                Selected entries: <span className="font-semibold text-white">{selectedCards.length}</span>
+                <div className="text-xs text-white/60 mt-1">
+                  Paid entries: <span className="font-semibold text-white">{enteredCards.length}</span>
                   {entriesLocked ? " (locked)" : ""}
                 </div>
               </div>
             </div>
 
             <div className="mt-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Select your card(s)</h3>
-              <p className="text-sm text-slate-600">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h3 className="text-lg font-semibold text-white">Select your card(s)</h3>
+                <button
+                  type="button"
+                  onClick={refreshCards}
+                  className="text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  aria-label="Refresh cards"
+                >
+                  Refresh Cards
+                </button>
+              </div>
+              <p className="text-sm text-white/65">
                 Connect your wallet on top of the page. Owned Players or Founders Series cards will be shown here. Choose the ones you wish to play with, pay your entry fee, and they’ll be locked in for this game. You can get Founders or Players Series cards at NFTBingo.net/mint on our site.
-                are shown.
-              </p>
+                </p>
+
+              {!wallet.connected ? (
+                <div className="mt-4 text-sm text-white/65">Connect your wallet to load your NFTBingo cards.</div>
+              ) : null}
 
               {cardsLoading ? (
-                <div className="mt-4 text-sm text-slate-600">Loading your cards…</div>
+                <div className="mt-4 text-sm text-white/65">Loading your cards…</div>
               ) : cardsError ? (
                 <div className="mt-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
                   {cardsError}
@@ -1199,7 +1452,13 @@ await confirmSignatureByPolling(connection, sig, 60_000);
               ) : null}
 
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(wallet.connected && walletCards.length ? walletCards : walletCards).map((card) => {
+                {wallet.connected && !cardsLoading && !cardsError && walletCards.length === 0 ? (
+                  <div className="text-sm text-white/65">
+                    No cards loaded yet. Tap <span className="font-semibold">Refresh cards</span> above, or try again in a moment.
+                  </div>
+                ) : null}
+
+                {walletCards.map((card) => {
                   const selected = selectedCards.some((c) => c.id === card.id);
                   const isEntered = enteredCardIds.includes(card.id);
                   const disabled = (status !== "OPEN" || entriesLocked) && !isEntered;
@@ -1211,17 +1470,17 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                       onClick={() => toggleSelectCard(card)}
                       disabled={disabled}
                       className={[
-                        "w-full text-left rounded-xl border p-4 transition",
-                        selected ? "border-pink-500 bg-pink-50" : "border-slate-200 bg-white hover:bg-slate-50",
+                        "w-full text-left rounded-xl border p-4 transition backdrop-blur-md",
+                        selected ? "border-pink-400/60 bg-pink-500/15 shadow-[0_0_0_1px_rgba(236,72,153,0.25)]" : "border-white/10 bg-white/5 hover:bg-white/8",
                         disabled ? "opacity-60 cursor-not-allowed" : "",
                       ].join(" ")}
                     >
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-semibold text-slate-900">{card.label}</div>
-                          <div className="text-xs text-slate-600 mt-1">
+                          <div className="font-semibold text-white">{card.label}</div>
+                          <div className="text-xs text-white/65 mt-1">
                             Type:{" "}
-                            <span className={card.type === "FOUNDERS" ? "text-indigo-700 font-semibold" : "text-slate-700 font-semibold"}>
+                            <span className={card.type === "FOUNDERS" ? "text-indigo-200 font-semibold" : "text-slate-200 font-semibold"}>
                               {card.type === "FOUNDERS" ? "Founders Series" : "Player Series"}
                             </span>
                           </div>
@@ -1229,7 +1488,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                         <span
                           className={[
                             "text-xs px-2 py-1 rounded-full",
-                            selected ? "bg-pink-600 text-white" : "bg-slate-200 text-slate-700",
+                            selected ? "bg-pink-600 text-white" : "bg-white/10 text-white/80 border border-white/10",
                           ].join(" ")}
                         >
                           {selected ? "Selected" : "Select"}
@@ -1253,13 +1512,13 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                   status !== "OPEN" || selectedCards.length === 0 || entriesLocked || paying ? "opacity-50 cursor-not-allowed" : "",
                 ].join(" ")}
               >
-                {paying ? "Paying…" : entriesLocked ? "Entered (Locked)" : "Pay & Enter Game"}
+                {paying ? "Paying…" : entriesLocked ? "Entered Successfully (Locked)" : "Pay & Enter Game"}
               </button>
 
-              <div className="text-sm text-slate-600">
-                Games can only be entered when they are showing the status as <span className="font-semibold text-slate-900">OPEN</span>.
+              <div className="text-sm text-white/65">
+                Games can only be entered when they are showing the status as <span className="font-semibold text-white">OPEN</span>.
                 {lastEntrySig ? (
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="text-xs text-white/60 mt-1">
                     Last entry: {formatSol(lastEntryTotalSol)} SOL • Tx:{" "}
                     <span className="font-mono">{lastEntrySig}</span>
                   </div>
@@ -1271,11 +1530,11 @@ await confirmSignatureByPolling(connection, sig, 60_000);
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Card preview */}
               <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">Your card view</h3>
-                <p className="text-sm text-slate-600 mb-4">Your card's numbers will be auto-marked for you as they are called. Free space always counts as marked. The Call Bingo button will unlock when your cards have the correct pattern based on the numbers drawn.</p>
+                <h3 className="text-lg font-semibold text-white mb-2">Your card view</h3>
+                <p className="text-sm text-white/65 mb-4">Your card's numbers will be auto-marked for you as they are called. Free space always counts as marked. The Call Bingo button will unlock when your cards have the correct pattern based on the numbers drawn.</p>
 
                 {activeEntries.length === 0 ? (
-                  <div className="border border-dashed border-slate-300 rounded-xl p-6 text-slate-600 bg-slate-50">
+                  <div className="rounded-xl border border-dashed border-white/15 bg-white/5 p-6 text-white/70">
                     Select card(s) above to see your grid(s) here.
                   </div>
                 ) : (
@@ -1285,24 +1544,24 @@ await confirmSignatureByPolling(connection, sig, 60_000);
 
               {/* Called list */}
               <div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">Called numbers</h3>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <h3 className="text-lg font-semibold text-white mb-2">Called numbers</h3>
+                <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 shadow-[0_18px_45px_rgba(0,0,0,0.25)]">
                   <div className="flex items-center justify-between">
-                    <div className="text-sm text-slate-600">Last # called</div>
-                    <div className="text-2xl font-extrabold text-slate-900">
+                    <div className="text-sm text-white/65">Last # called</div>
+                    <div className="text-2xl font-extrabold text-white">
                       {calledNumbers.length ? calledNumbers[calledNumbers.length - 1] : "—"}
                     </div>
                   </div>
 
                   <div className="mt-4">
-                    <div className="text-sm text-slate-600 mb-2">History</div>
-                    <div className="max-h-40 overflow-auto rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                    <div className="text-sm text-white/65 mb-2">History</div>
+                    <div className="max-h-40 overflow-auto rounded-lg border border-white/10 bg-white/5 p-3 text-sm">
                       {calledNumbers.length === 0 ? (
-                        <div className="text-slate-500">No numbers called yet.</div>
+                        <div className="text-white/55">No numbers called yet.</div>
                       ) : (
                         <div>
                           <div className="mb-3 flex flex-wrap items-center gap-3">
-                            <div className="text-xs font-semibold text-slate-600">Last call</div>
+                            <div className="text-xs font-semibold text-white/65">Last call</div>
                             <div className="bingo-ball text-lg font-black">
                               {calledNumbers[calledNumbers.length - 1]}
                             </div>
@@ -1326,12 +1585,12 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                   {/* Claim window */}
                   <div className="mt-4 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-600">Claim window</span>
-                      <span className="font-semibold text-slate-900">
+                      <span className="text-white/65">Claim window</span>
+                      <span className="font-semibold text-white">
                         {claimWindowOpenAt ? `${claimWindowSecondsLeft}s` : "—"}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-500 mt-1">Claim window closes after the next number is called or 60 seconds after a winning Bingo has been verified.</div>
+                    <div className="text-xs text-white/60 mt-1">Claim window closes after the next number is called or 60 seconds after a winning Bingo has been verified.</div>
                   </div>
 
                   {/* Claim button */}
@@ -1350,7 +1609,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                     </button>
 
                     <div className="mt-2 text-xs text-slate-500">
-                      Invalid strikes: <span className="font-semibold text-slate-900">{invalidStrikes}</span>/3 • Cooldown: 10s
+                      Invalid strikes: <span className="font-semibold text-white">{invalidStrikes}</span>/3 • Cooldown: 10s
                     </div>
                   </div>
 
@@ -1372,42 +1631,54 @@ await confirmSignatureByPolling(connection, sig, 60_000);
             </div>
 
             {/* Winners */}
-            <div className="mt-8 border-t border-slate-200 pt-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Winners (local MVP)</h3>
+            <div className="mt-8 border-t border-white/10 pt-6">
+              <h3 className="text-lg font-semibold text-white mb-2">Winners (local MVP)</h3>
               {winners.length === 0 ? (
-                <p className="text-sm text-slate-600">No winners recorded yet.</p>
+                <p className="text-sm text-white/65">No winners recorded yet.</p>
               ) : (
                 <div className="space-y-3">
-                  <div className="text-sm text-slate-700">
-                    Winners recorded: <span className="font-semibold text-slate-900">{winners.length}</span>
+                  <div className="text-sm text-white/70">
+                    Winners recorded: <span className="font-semibold text-white">{winners.length}</span>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-2">
+                  <div className="rounded-xl border border-white/10 bg-white/5 p-2">
                     <div className="flex flex-col gap-2">
                       {winners.map((w, idx) => (
-                        <div key={`${w.cardId}-${idx}`} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-800">
-                            {w.isFounders ? "⭐ Founders" : "🎫 Player"} — {w.cardId}
-                          </span>
-                          <span className="text-xs text-slate-500">{w.wallet}</span>
+                        <div
+                          key={`${w.cardId}-${idx}`}
+                          className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm"
+                        >
+                          <div className="font-semibold text-white mb-2">
+                            {w.isFounders ? "⭐ Founders" : "🎫 Player"} —
+                          </div>
+
+                          <div className="mb-2">
+                            <div className="text-[11px] uppercase tracking-wide text-slate-500">Card Token ID</div>
+                            <div className="font-mono text-white break-all">{w.cardId}</div>
+                          </div>
+
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-slate-500">Wallet</div>
+                            <div className="font-mono text-white break-all">{w.wallet}</div>
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
                   {payoutPreview && (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
-                      <div className="font-semibold text-slate-900 mb-2">Payout preview (fair model)</div>
-                      <div className="text-slate-700">
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm">
+                      <div className="font-semibold text-white mb-2">Payout preview (fair model)</div>
+                      <div className="text-white/80">
                         Each winner base share:{" "}
-                        <span className="font-semibold text-slate-900">{formatSol(payoutPreview.perWinnerBase)} SOL</span>
+                        <span className="font-semibold text-white">{formatSol(payoutPreview.perWinnerBase)} SOL</span>
                       </div>
-                      <div className="text-slate-700 mt-1">
+                      <div className="text-white/80 mt-1">
                         Founders winners:{" "}
-                        <span className="font-semibold text-slate-900">{payoutPreview.foundersWinners}</span>{" "}
+                        <span className="font-semibold text-white">{payoutPreview.foundersWinners}</span>{" "}
                         {payoutPreview.foundersWinners > 0 ? (
                           <>
                             • Each founders bonus:{" "}
-                            <span className="font-semibold text-slate-900">{formatSol(payoutPreview.perFounderBonus)} SOL</span>
+                            <span className="font-semibold text-white">{formatSol(payoutPreview.perFounderBonus)} SOL</span>
                           </>
                         ) : (
                           <>• No founders bonus paid</>
@@ -1422,13 +1693,13 @@ await confirmSignatureByPolling(connection, sig, 60_000);
 
           {/* Right: Admin panel (ADMIN ONLY) */}
           {isAdmin ? (
-            <div className="bg-white rounded-2xl shadow p-6 md:p-8">
-              <h2 className="text-2xl font-bold text-slate-900">Controls</h2>
-              <p className="text-slate-700 mt-1">Admin controls (mirror-click numbers + manage the game).</p>
+            <div className="rounded-2xl border border-white/10 bg-white/10 backdrop-blur-xl shadow-[0_18px_45px_rgba(0,0,0,0.35)] p-6 md:p-8">
+              <h2 className="text-2xl font-bold text-white">Controls</h2>
+              <p className="text-white/70 mt-1">Admin controls (mirror-click numbers + manage the game).</p>
 
               <div className="mt-6 space-y-4">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm text-slate-600">Entry Fee (SOL)</div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-sm text-white/65">Entry Fee (SOL)</div>
                   <div className="mt-2 flex items-center gap-2">
                     <input
                       type="number"
@@ -1457,15 +1728,15 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                           (e.currentTarget as HTMLInputElement).blur();
                         }
                       }}
-                      className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
+                      className="w-32 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
                     />
-                    <span className="text-sm text-slate-600">per card</span>
+                    <span className="text-sm text-white/65">per card</span>
                   </div>
                   <div className="text-xs text-slate-500 mt-2">Locked once the game starts (LOCKED/PAUSED).</div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm text-slate-600">Game Type</div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-sm text-white/65">Game Type</div>
                   <select
                     value={gameType}
                     disabled={status === "LOCKED" || status === "PAUSED"}
@@ -1484,7 +1755,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                        setClaimResult({ result: "REJECTED", message: err?.message || "Failed to set game type." });
                      }
                    }}
-                    className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 bg-white"
+                    className="nbg-select mt-2 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
                   >
                     <option value="STANDARD">Standard</option>
                     <option value="FOUR_CORNERS">4 Corners</option>
@@ -1520,7 +1791,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                       onClick={adminPauseToggle}
                       disabled={status !== "LOCKED" && status !== "PAUSED"}
                       className={[
-                        "flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-900 hover:bg-slate-50",
+                        "flex-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2 font-semibold text-white hover:bg-white/15",
                         status !== "LOCKED" && status !== "PAUSED" ? "opacity-50 cursor-not-allowed" : "",
                       ].join(" ")}
                     >
@@ -1545,7 +1816,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                     onClick={adminCloseAndIncrement}
                     disabled={status !== "ENDED"}
                     className={[
-                      "rounded-xl border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-900 hover:bg-slate-50",
+                      "rounded-xl border border-white/15 bg-white/10 px-4 py-2 font-semibold text-white hover:bg-white/15",
                       status !== "ENDED" ? "opacity-50 cursor-not-allowed" : "",
                     ].join(" ")}
                   >
@@ -1569,15 +1840,15 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                 </div>
               </div>
 
-              <div className="mt-8 border-t border-slate-200 pt-6">
+              <div className="mt-8 border-t border-white/10 pt-6">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-semibold text-slate-900">Mirror-click calls</h3>
+                  <h3 className="text-lg font-semibold text-white">Mirror-click calls</h3>
                   <button
                     type="button"
                     onClick={adminUndo}
                     disabled={(status !== "LOCKED" && status !== "PAUSED") || calledNumbers.length === 0}
                     className={[
-                      "rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm font-semibold text-slate-900 hover:bg-slate-50",
+                      "rounded-lg border border-white/15 bg-white/10 px-3 py-1 text-sm font-semibold text-white hover:bg-white/15",
                       (status !== "LOCKED" && status !== "PAUSED") || calledNumbers.length === 0
                         ? "opacity-50 cursor-not-allowed"
                         : "",
@@ -1600,8 +1871,8 @@ await confirmSignatureByPolling(connection, sig, 60_000);
                         className={[
                           "rounded-lg px-2 py-2 text-xs font-semibold border transition-all",
                           picked
-                            ? "bg-slate-900 text-white border-slate-900"
-                            : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50",
+                            ? "bg-slate-900 text-white border-white/20"
+                            : "bg-white/10 text-white border-white/15 hover:bg-white/15",
                           disabled && !picked ? "opacity-40 cursor-not-allowed" : "",
                         ].join(" ")}
                       >
@@ -1615,10 +1886,167 @@ await confirmSignatureByPolling(connection, sig, 60_000);
           ) : null}
         </div>
 
-        <div className="mt-10 text-xs text-slate-500">
-          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.2-alpha
+        <div className="mt-18 text-xs text-white/60 text-center max-w-4xl mx-auto leading-relaxed">
+          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.4-alpha
         </div>
       </div>
+
+      <style jsx global>{`
+        :root{
+          --nbg-glow: rgba(99,102,241,0.55);
+          --nbg-glow2: rgba(16,185,129,0.35);
+          --nbg-glow3: rgba(236,72,153,0.25);
+        }
+        .nbg-game-bg{
+          background: radial-gradient(1200px 700px at 15% 15%, rgba(99,102,241,0.25), transparent 55%),
+                      radial-gradient(1100px 650px at 85% 20%, rgba(16,185,129,0.22), transparent 55%),
+                      radial-gradient(900px 600px at 55% 90%, rgba(236,72,153,0.18), transparent 55%),
+                      linear-gradient(180deg, #070A12 0%, #090B17 55%, #070A12 100%);
+          color-scheme: dark;
+        }
+        .nbg-bg-layers{
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+        .nbg-bg-orb{
+          position: absolute;
+          width: 720px;
+          height: 720px;
+          border-radius: 9999px;
+          filter: blur(40px);
+          opacity: 0.55;
+          transform: translateZ(0);
+          animation: nbgFloat 12s ease-in-out infinite;
+        }
+        .nbg-orb-1{ left:-220px; top:-240px; background: var(--nbg-glow); animation-delay: -2s; }
+        .nbg-orb-2{ right:-260px; top:-220px; background: var(--nbg-glow2); animation-delay: -5s; }
+        .nbg-orb-3{ left: 25%; bottom:-420px; background: var(--nbg-glow3); animation-delay: -8s; }
+        .nbg-bg-grid{
+          position: absolute;
+          inset: -2px;
+          background-image:
+            linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+          background-size: 56px 56px;
+          mask-image: radial-gradient(circle at 50% 30%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.25) 50%, transparent 78%);
+          opacity: 0.35;
+        }
+        .nbg-bg-vignette{
+          position:absolute;
+          inset:0;
+          background: radial-gradient(circle at 50% 40%, transparent 0%, rgba(0,0,0,0.55) 72%, rgba(0,0,0,0.75) 100%);
+        }
+        @keyframes nbgFloat{
+          0%,100%{ transform: translate3d(0,0,0) scale(1); }
+          50%{ transform: translate3d(0,-18px,0) scale(1.03); }
+        }
+        .nbg-logo-badge{
+          width: 44px;
+          height: 44px;
+          border-radius: 16px;
+          background: linear-gradient(135deg, rgba(99,102,241,0.85), rgba(16,185,129,0.65));
+          box-shadow: 0 12px 35px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.14) inset;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+        }
+        .nbg-logo-badge-inner{
+          font-weight: 900;
+          color: white;
+          letter-spacing: -0.02em;
+          font-size: 20px;
+          text-shadow: 0 8px 18px rgba(0,0,0,0.35);
+          user-select:none;
+        }
+        .nbg-logo-wrap{
+          height: 44px;
+          display:flex;
+          align-items:center;
+        }
+        .nbg-logo-img{
+          height: 44px;
+          width: auto;
+          filter: drop-shadow(0 10px 22px rgba(0,0,0,0.45));
+          user-select:none;
+        }
+        .nbg-pill{
+          border-radius: 9999px;
+          padding: 10px 12px;
+          background: rgba(255,255,255,0.10);
+          border: 1px solid rgba(255,255,255,0.12);
+          backdrop-filter: blur(12px);
+          box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+          min-width: 150px;
+        }
+        .nbg-pill-label{
+          font-size: 10px;
+          opacity: 0.7;
+          letter-spacing: 0.12em;
+          font-weight: 800;
+        }
+        .nbg-pill-value{
+          font-size: 13px;
+          font-weight: 800;
+          margin-top: 2px;
+          color: rgba(255,255,255,0.95);
+        }
+        .nbg-pill-jackpot{
+          box-shadow: 0 18px 40px rgba(0,0,0,0.30), 0 0 0 1px rgba(255,255,255,0.12) inset, 0 0 30px rgba(236,72,153,0.16);
+        }
+        /* Make default inputs/buttons feel more "gamey" */
+        button{
+          transform: translateZ(0);
+        }
+        button:active{
+          transform: translateY(1px);
+        }
+
+        /* Bingo balls (ensure readable on dark UI) */
+        .bingo-ball{
+          width: 64px;
+          height: 64px;
+          border-radius: 9999px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: rgba(255,255,255,0.96);
+          background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.22), rgba(255,255,255,0.06) 55%, rgba(0,0,0,0.22) 100%);
+          border: 1px solid rgba(255,255,255,0.18);
+          box-shadow: 0 16px 35px rgba(0,0,0,0.45);
+        }
+        .bingo-ball-mini{
+          width: 34px;
+          height: 34px;
+          border-radius: 9999px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 900;
+          font-size: 12px;
+          line-height: 1;
+          color: rgba(255,255,255,0.96);
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.16);
+          box-shadow: 0 10px 22px rgba(0,0,0,0.35);
+        }
+
+        /* Dark dropdown options (fix white menu) */
+        .nbg-select{
+          color: rgba(255,255,255,0.95);
+          background-color: rgba(255,255,255,0.10);
+        }
+        .nbg-select option{
+          background-color: #0b1220;
+          color: rgba(255,255,255,0.95);
+        }
+        .nbg-select option:checked{
+          background-color: #1f2937;
+        }
+
+      `}</style>
+
     </main>
   );
 }

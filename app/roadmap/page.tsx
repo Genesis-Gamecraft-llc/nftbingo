@@ -244,7 +244,7 @@ export default function RoadmapPage() {
     },
     {
       id: "p3-games-live",
-      label: "NFTBingo games go live 🎯♟️",
+      label: "NFTBingo games standalone system goes live 🎯♟️",
       status: "planned",
     },
   ],
@@ -438,7 +438,7 @@ export default function RoadmapPage() {
 
         {/* Footer note */}
         <div className="mt-12 text-center text-sm text-slate-500">
-          © 2025 NFTBingo • Built on Solana • nftbingo.net • Roadmap version 1.2
+          © 2025 NFTBingo • Built on Solana • NFTBingo.net • Roadmap version 1.2
         </div>
       </div>
     </main>
