@@ -562,19 +562,42 @@ type ServerGameState = {
   my?: ServerMy;
 };
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-    cache: "no-store",
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = (data as any)?.error || (data as any)?.message || `Request failed (${res.status})`;
-    throw new Error(msg);
+async function fetchJson<T>(url: string, init?: (RequestInit & { timeoutMs?: number })): Promise<T> {
+  const anyInit: any = init || {};
+  const timeoutMs: number = typeof anyInit.timeoutMs === "number" ? anyInit.timeoutMs : 12_000;
+
+  // Cache-buster for GET/HEAD to avoid edge/browser caching surprises.
+  const method = String(anyInit.method || "GET").toUpperCase();
+  const finalUrl =
+    method === "GET" || method === "HEAD"
+      ? `${url}${url.includes("?") ? "&" : "?"}_ts=${Date.now()}`
+      : url;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(finalUrl, {
+      ...anyInit,
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...(anyInit.headers || {}) },
+      cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = (data as any)?.error || (data as any)?.message || `Request failed (${res.status})`;
+      throw new Error(msg);
+    }
+    return data as T;
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw new Error("Request timed out. Please try again.");
+    throw e;
+  } finally {
+    clearTimeout(timeout);
   }
-  return data as T;
 }
+
 
 
 export default function PlayPage() {
@@ -788,14 +811,19 @@ export default function PlayPage() {
     let stopped = false;
 
     const tick = async () => {
+      if ((tick as any)._inFlight) return;
+      (tick as any)._inFlight = true;
+
       try {
         const qs = walletAddress ? `?wallet=${encodeURIComponent(walletAddress)}` : "";
-        const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`);
+        const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`, { timeoutMs: 8_000 });
         if (stopped) return;
 
         applyServerState(s);
       } catch {
-        // ignore poll failures
+        // ignore poll failures (mobile networks can be spiky)
+      } finally {
+        (tick as any)._inFlight = false;
       }
     };
 
@@ -869,7 +897,14 @@ export default function PlayPage() {
 
         for (let attempt = 0; attempt < 4; attempt++) {
           try {
-            const res = await fetch(url, { cache: "no-store" });
+            const controller = new AbortController();
+            const t = setTimeout(() => controller.abort(), 15_000);
+            let res: Response;
+            try {
+              res = await fetch(url, { cache: "no-store", signal: controller.signal });
+            } finally {
+              clearTimeout(t);
+            }
 
             // If you get rate limited, back off and retry.
             if (res.status === 429) {
@@ -1909,7 +1944,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
         </div>
 
         <div className="mt-18 text-xs text-white/60 text-center max-w-4xl mx-auto leading-relaxed">
-          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.8-alpha
+          MVP note: This game system is in early Alpha and is considered Minimum Viable Product. NFTBingo is continuously working to upgrade the game system and migrate all functionality to our gaming site. Potential bugs and issues should be reported to support@nftbingo.net. • Current Release Version 1.0.9-alpha
         </div>
       </div>
 

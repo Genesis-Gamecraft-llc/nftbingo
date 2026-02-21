@@ -15,6 +15,9 @@ async function isAdminCookie() {
 }
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 
 export async function POST(req: Request) {
   if (!(await isAdminCookie())) {
@@ -136,6 +139,6 @@ case "RESET_PROGRESSIVE": {
 
   const { buildStateResponse } = await import("../_stateResponse");
   return NextResponse.json(await buildStateResponse(next), {
-    headers: { "Cache-Control": "no-store" },
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0, s-maxage=0" },
   });
 }

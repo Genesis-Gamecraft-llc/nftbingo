@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { loadState, saveState } from "../_store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -60,5 +63,5 @@ export async function POST(req: Request) {
 
   const saved = await saveState(state);
   const { buildStateResponse } = await import("../_stateResponse");
-  return NextResponse.json(await buildStateResponse(saved, wallet), { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(await buildStateResponse(saved, wallet), { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0, s-maxage=0" } });
 }
