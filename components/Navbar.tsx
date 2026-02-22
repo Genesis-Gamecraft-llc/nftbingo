@@ -51,7 +51,7 @@ export default function Navbar() {
           <img
             src="/images/NFTBingoLogo.png"
             alt="NFTBingo Logo"
-            className="h-28 w-auto object-contain"  // ← bigger, no square, no shadow
+            className="h-20 w-auto object-contain"  // ← bigger, no square, no shadow
           />
           <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-2xl lg:text-3xl whitespace-nowrap">
             NFTBingo
