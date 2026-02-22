@@ -36,8 +36,24 @@ body {
   border-radius: 0.75rem !important; /* rounded-xl */
   box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
   height: auto !important;
+  min-height: 0 !important;
   line-height: 1.25rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease !important;
+}
+
+/* On mobile: cap width so the wallet button can't shove the hamburger off screen */
+@media (max-width: 767px) {
+  .nftbingo-solana-btn .wallet-adapter-button {
+    max-width: 120px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.875rem !important; /* text-sm */
+  }
 }
 
 .nftbingo-solana-btn .wallet-adapter-button:hover {
@@ -96,220 +112,3 @@ body {
   background: rgba(255, 255, 255, 0.06) !important;
   border-radius: 9999px !important;
 }
-
-
-/* ===== NFTBingo Play page "game feel" (scoped) ===== */
-.nbg-play-shell{
-  /* Use the site's pink→purple→blue vibe without affecting the rest of the site */
-  background: radial-gradient(1200px 800px at 20% 0%, rgba(236,72,153,0.22) 0%, rgba(139,92,246,0.16) 45%, rgba(59,130,246,0.10) 70%, rgba(255,255,255,0) 100%),
-              linear-gradient(135deg, rgba(236,72,153,0.10) 0%, rgba(139,92,246,0.10) 50%, rgba(59,130,246,0.08) 100%);
-  position: relative;
-}
-
-.nbg-play-shell::before{
-  content:"";
-  position: fixed;
-  inset: 0;
-  background: url("/images/NFTBingoLogo.png") center/280px no-repeat;
-  opacity: 0.06;
-  pointer-events: none;
-  filter: saturate(1.1);
-}
-
-/* Card art with mark overlay */
-.nbg-card-art{
-  position: relative;
-  width: 100%;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid rgba(148,163,184,0.35);
-  background: rgba(255,255,255,0.75);
-  box-shadow: 0 10px 30px rgba(2,6,23,0.08);
-}
-
-.nbg-card-img{
-  display:block;
-  width: 100%;
-  height: auto;
-}
-
-/* Overlay region for marks (tweak these 4 vars to align to your printed grid) */
-.nbg-card-overlay{
-  --grid-top: 33%;
-  --grid-left: 8%;
-  --grid-width: 84%;
-  --grid-height: 58%;
-
-  position: absolute;
-  top: var(--grid-top);
-  left: var(--grid-left);
-  width: var(--grid-width);
-  height: var(--grid-height);
-
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  grid-template-rows: repeat(5, 1fr);
-  gap: 0;
-}
-
-.nbg-card-cell{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-
-.nbg-card-mark{
-  width: 62%;
-  height: 62%;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(236,72,153,0.55), rgba(139,92,246,0.55), rgba(59,130,246,0.45));
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.55), 0 8px 18px rgba(2,6,23,0.15);
-  backdrop-filter: blur(2px);
-}
-
-/* Mobile tuning: a little bigger watermark + slight grid shift */
-@media (max-width: 480px){
-  .nbg-play-shell::before{
-    background-size: 220px;
-    opacity: 0.07;
-  }
-  .nbg-card-overlay{
-    --grid-top: 34%;
-    --grid-left: 7.5%;
-    --grid-width: 85%;
-    --grid-height: 58%;
-  }
-}
-
-/* ===== NFTBingo Play Page Skin (scoped) ===== */
-.nbg-play-shell{
-  min-height: 100vh;
-  width: 100%;
-  background: radial-gradient(1200px 600px at 20% 10%, rgba(236,72,153,0.18), transparent 60%),
-              radial-gradient(900px 500px at 80% 20%, rgba(99,102,241,0.16), transparent 55%),
-              linear-gradient(135deg, rgba(236,72,153,0.10) 0%, rgba(168,85,247,0.10) 45%, rgba(59,130,246,0.10) 100%);
-}
-
-.nbg-play-shell::before{
-  content: "";
-  position: fixed;
-  inset: 0;
-  background: url("/images/NFTBingoLogo.png") 50% 18% / 220px no-repeat;
-  opacity: 0.06;
-  pointer-events: none;
-  filter: saturate(1.05);
-}
-
-@media (min-width: 768px){
-  .nbg-play-shell::before{
-    background-size: 260px;
-    opacity: 0.05;
-  }
-}
-
-/* Card image + mark overlay */
-.nbg-card-overlay{
-  position: relative;
-  width: 100%;
-  max-width: 380px;
-  margin: 0 auto;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
-  background: white;
-}
-
-/* Image inside overlay */
-.nbg-card-img{
-  display: block;
-  width: 100%;
-  height: auto;
-  user-select: none;
-}
-
-/* Mark grid layer */
-.nbg-mark-layer{
-  position: absolute;
-  /* tuned for your current card layout (numbers grid near bottom) */
-  top: 57%;
-  left: 6%;
-  width: 88%;
-  height: 39%;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  grid-template-rows: repeat(5, 1fr);
-  gap: 0;
-  pointer-events: none;
-}
-
-.nbg-mark{
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.nbg-mark.is-marked::after{
-  content: "";
-  width: 62%;
-  height: 62%;
-  border-radius: 999px;
-  background: radial-gradient(circle at 30% 30%, rgba(236,72,153,0.95), rgba(99,102,241,0.95));
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.55), 0 10px 18px rgba(99,102,241,0.22);
-  opacity: 0.85;
-}
-
-@media (max-width: 480px){
-  .nbg-mark-layer{
-    top: 58%;
-    left: 5.5%;
-    width: 89%;
-    height: 39.5%;
-  }
-  .nbg-mark.is-marked::after{
-    width: 66%;
-    height: 66%;
-  }
-}
-
-
-/* ===== NFTBingo game feel helpers ===== */
-@layer components {
-  .bingo-glow {
-    box-shadow: 0 0 18px rgba(255, 255, 255, 0.12);
-  }
-
-  .bingo-ball {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 46px;
-    height: 46px;
-    border-radius: 9999px;
-    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(255,255,255,0.65) 28%, rgba(255,255,255,0.25) 55%, rgba(0,0,0,0.15) 100%);
-    border: 1px solid rgba(15, 23, 42, 0.18);
-    box-shadow: 0 10px 22px rgba(2, 6, 23, 0.18), 0 0 22px rgba(99, 102, 241, 0.18);
-    color: rgba(15, 23, 42, 0.92);
-  }
-
-  .bingo-ball-mini {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: clamp(26px, 8vw, 40px);
-    height: clamp(26px, 8vw, 40px);
-    border-radius: 9999px;
-    /* Blue-tinted glass ball that still lets the card numbers show through */
-    background: radial-gradient(circle at 30% 30%,
-      rgba(219, 234, 254, 0.95),
-      rgba(147, 197, 253, 0.85) 30%,
-      rgba(59, 130, 246, 0.65) 60%,
-      rgba(30, 64, 175, 0.45) 100%);
-    border: 1px solid rgba(37, 99, 235, 0.45);
-    box-shadow: 0 10px 18px rgba(2, 6, 23, 0.16);
-    color: rgba(15, 23, 42, 0.95);
-    font-weight: 900;
-    font-size: 12px;
-    backdrop-filter: blur(0px);
-  }
-}
-

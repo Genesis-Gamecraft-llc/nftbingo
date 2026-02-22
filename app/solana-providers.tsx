@@ -26,38 +26,24 @@ export default function SolanaProviders({ children }: Props) {
 
   // Use paid RPC if provided, otherwise fall back to the public cluster endpoint.
   const endpoint = useMemo(() => {
-    return process.env.NEXT_PUBLIC_SOLANA_RPC?.trim() || clusterApiUrl("mainnet-beta");
+    return (
+      process.env.NEXT_PUBLIC_SOLANA_RPC?.trim() || clusterApiUrl("mainnet-beta")
+    );
   }, []);
 
-  // IMPORTANT:
-  // Do NOT auto-derive wsEndpoint from the HTTP endpoint.
-  // Some paid RPC providers use different WS URLs, and a bad wsEndpoint can cause hangs/stalls.
   // Only use WS if explicitly configured.
   const wsEndpoint = useMemo(() => {
     const v = process.env.NEXT_PUBLIC_SOLANA_WS?.trim();
     return v && v.length ? v : undefined;
   }, []);
 
-  // Keep the selectable wallets tight (and de-dupe by name defensively).
+  // ONLY these wallets. Nothing else.
   const wallets = useMemo(() => {
-    const list = [
+    return [
       new PhantomWalletAdapter(),
       new SolflareWalletAdapter({ network }),
       new BackpackWalletAdapter(),
     ];
-
-    const seen = new Set<string>();
-    return list.filter((w) => {
-      const name = String((w as any)?.name || "");
-      if (!name) return true;
-
-      // If anything (wallet-standard/injected) ever sneaks in as MetaMask twice,
-      // this prevents React key collisions in the modal list.
-      const key = name.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
   }, [network]);
 
   const connectionConfig = useMemo(() => {
@@ -66,7 +52,6 @@ export default function SolanaProviders({ children }: Props) {
     return base;
   }, [wsEndpoint]);
 
-  // Avoid hydration mismatches on first paint in Next app router.
   if (!mounted) return null;
 
   return (
