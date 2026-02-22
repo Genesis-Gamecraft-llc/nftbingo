@@ -566,7 +566,6 @@ async function fetchJson<T>(url: string, init?: (RequestInit & { timeoutMs?: num
   const anyInit: any = init || {};
   const timeoutMs: number = typeof anyInit.timeoutMs === "number" ? anyInit.timeoutMs : 12_000;
 
-  // Cache-buster for GET/HEAD to avoid edge/browser caching surprises.
   const method = String(anyInit.method || "GET").toUpperCase();
   const finalUrl =
     method === "GET" || method === "HEAD"
@@ -650,6 +649,8 @@ export default function PlayPage() {
   const [cardsError, setCardsError] = useState<string>("");
   const [cardsRefreshNonce, setCardsRefreshNonce] = useState<number>(0);
   const refreshCards = () => setCardsRefreshNonce((n) => n + 1);
+
+  const ownedCardsAbortRef = useRef<AbortController | null>(null);
 
 
   // Payment/entry lock for this game
@@ -816,12 +817,12 @@ export default function PlayPage() {
 
       try {
         const qs = walletAddress ? `?wallet=${encodeURIComponent(walletAddress)}` : "";
-        const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`, { timeoutMs: 8_000 });
+        const s = await fetchJson<ServerGameState>(`/api/game/state${qs}`, { timeoutMs: 10_000 });
         if (stopped) return;
 
         applyServerState(s);
       } catch {
-        // ignore poll failures (mobile networks can be spiky)
+        // ignore poll failures
       } finally {
         (tick as any)._inFlight = false;
       }
@@ -830,7 +831,16 @@ export default function PlayPage() {
     tick();
     timer = setInterval(tick, 1500);
 
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    const onFocus = () => tick();
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
+
     return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
       stopped = true;
       if (timer) clearInterval(timer);
     };
@@ -891,20 +901,23 @@ export default function PlayPage() {
 
       setCardsError("");
 
+      try { ownedCardsAbortRef.current?.abort(); } catch {}
+      const ownedController = new AbortController();
+      ownedCardsAbortRef.current = ownedController;
+
       const fetchWithRetry = async () => {
-        const url = `/api/cards/owned?owner=${encodeURIComponent(walletAddress)}`;
+        const url = `/api/cards/owned?owner=${encodeURIComponent(walletAddress)}&_ts=${Date.now()}`;
         let lastErr: any = null;
 
         for (let attempt = 0; attempt < 4; attempt++) {
           try {
-            const controller = new AbortController();
-            const t = setTimeout(() => controller.abort(), 15_000);
-            let res: Response;
-            try {
-              res = await fetch(url, { cache: "no-store", signal: controller.signal });
-            } finally {
-              clearTimeout(t);
-            }
+const t = setTimeout(() => ownedController.abort(), 30_000);
+let res: Response;
+try {
+  res = await fetch(url, { cache: "no-store", signal: ownedController.signal });
+} finally {
+  clearTimeout(t);
+}
 
             // If you get rate limited, back off and retry.
             if (res.status === 429) {
@@ -999,8 +1012,14 @@ export default function PlayPage() {
       } catch (e: any) {
         if (cancelled) return;
 
-        // If we have cached cards, keep them and just show a soft warning.
-        const msg = e?.message ?? "Failed to load cards";
+        // Mobile wallet webviews (especially Phantom) can abort requests when backgrounded.
+        const isAbort =
+          e?.name === "AbortError" ||
+          String(e?.message || "").toLowerCase().includes("aborted") ||
+          String(e?.message || "").toLowerCase().includes("abort");
+
+        const msg = isAbort ? "Connection interrupted. Please tap Refresh Cards and try again." : (e?.message ?? "Failed to load cards");
+
         if (cached && cached.length) {
           setCardsError("If you are unable to see your cards, please click the Refresh Cards button above. If that doesn't work, try refreshing the page.");
         } else {
@@ -1014,6 +1033,7 @@ export default function PlayPage() {
     run();
     return () => {
       cancelled = true;
+      try { ownedCardsAbortRef.current?.abort(); } catch {}
     };
   }, [wallet.connected, walletAddress, cardsRefreshNonce]);
   // When walletCards refresh, keep selected/entered card objects in sync so imageUrl updates
@@ -1687,7 +1707,7 @@ await confirmSignatureByPolling(connection, sig, 60_000);
 
             {/* Winners */}
             <div className="mt-8 border-t border-white/10 pt-6">
-              <h3 className="text-lg font-semibold text-white mb-2">Winners (local MVP)</h3>
+              <h3 className="text-lg font-semibold text-white mb-2">BINGO! Winners</h3>
               {winners.length === 0 ? (
                 <p className="text-sm text-white/65">No winners recorded yet.</p>
               ) : (

@@ -2,8 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
 import Providers from "./providers";
-import SolanaProviders from "./solana-providers";
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: "NFTBingo – Own. Play. Win. Earn",
@@ -45,10 +44,8 @@ export default function RootLayout({
     <html lang="en">
       <body className="bg-white text-slate-900">
         <Providers>
-          <SolanaProviders>
-            <Navbar />
-            <div className="pt-20">{children}</div>
-          </SolanaProviders>
+          <Navbar />
+          <div className="pt-20">{children}</div>
         </Providers>
         <Analytics />
       </body>
