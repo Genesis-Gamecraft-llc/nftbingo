@@ -17,50 +17,51 @@ export default function Navbar() {
     { name: "Blog", href: "/blog" },
   ];
 
-  // Mobile menu stays flat. Desktop uses the Info dropdown.
   const mobileNavItems = [
     { name: "Home", href: "/" },
     ...infoItems,
     { name: "Join Community", href: "/join-community" },
   ];
 
+  const infoActive =
+    pathname === "/about" ||
+    pathname === "/whitepaper" ||
+    pathname === "/roadmap" ||
+    pathname === "/blog";
+
+  const linkClass = (href: string) =>
+    `font-medium ${
+      pathname === href
+        ? "text-pink-600 border-b-2 border-pink-500"
+        : "text-slate-700 hover:text-pink-600"
+    }`;
+
   return (
     <nav className="w-full bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm fixed top-0 left-0 z-50">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-6">
-        {/* Logo */}
+        {/* Logo (NO box/shadow) */}
         <Link href="/" className="flex items-center gap-3 flex-shrink-0">
           <img
             src="/images/NFTBingoLogo.png"
             alt="NFTBingo Logo"
-            className="w-14 h-14 object-contain shadow-md"
+            className="h-20 w-auto object-contain"
           />
           <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-xl sm:text-2xl lg:text-3xl whitespace-nowrap">
             NFTBingo
           </span>
         </Link>
 
-        {/* Desktop nav (centered) */}
+        {/* Desktop nav centered */}
         <div className="hidden md:flex flex-1 items-center justify-center gap-8">
-          <Link
-            href="/"
-            className={`font-medium ${
-              pathname === "/"
-                ? "text-pink-600 border-b-2 border-pink-500"
-                : "text-slate-700 hover:text-pink-600"
-            }`}
-          >
+          <Link href="/" className={linkClass("/")}>
             Home
           </Link>
 
-          {/* Info dropdown (hover-friendly) */}
           <div className="relative group">
             <button
               type="button"
               className={`font-medium ${
-                pathname.startsWith("/about") ||
-                pathname.startsWith("/whitepaper") ||
-                pathname.startsWith("/roadmap") ||
-                pathname.startsWith("/blog")
+                infoActive
                   ? "text-pink-600 border-b-2 border-pink-500"
                   : "text-slate-700 hover:text-pink-600"
               }`}
@@ -68,7 +69,7 @@ export default function Navbar() {
               Info
             </button>
 
-            {/* Hover bridge so menu doesn’t vanish while moving mouse down */}
+            {/* hover bridge */}
             <div className="absolute left-0 top-full h-3 w-full" />
 
             <div className="absolute left-1/2 top-full z-50 hidden w-52 -translate-x-1/2 pt-2 group-hover:block group-focus-within:block">
@@ -90,19 +91,12 @@ export default function Navbar() {
             </div>
           </div>
 
-          <Link
-            href="/join-community"
-            className={`font-medium ${
-              pathname === "/join-community"
-                ? "text-pink-600 border-b-2 border-pink-500"
-                : "text-slate-700 hover:text-pink-600"
-            }`}
-          >
+          <Link href="/join-community" className={linkClass("/join-community")}>
             Join Community
           </Link>
         </div>
 
-        {/* Desktop right-side CTAs */}
+        {/* Desktop CTAs */}
         <div className="hidden md:flex items-center gap-4 flex-shrink-0">
           <Link
             href="/mint"
@@ -121,19 +115,18 @@ export default function Navbar() {
           <SolanaConnectButton />
         </div>
 
-        {/* Mobile right-side wallet */}
-        <div className="md:hidden ml-auto mr-3">
-          <SolanaConnectButton />
-        </div>
+        {/* Mobile right-side controls */}
+        <div className="md:hidden ml-auto flex items-center gap-3 flex-shrink-0">
+          <button
+            className="text-slate-700 hover:text-pink-600"
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="Toggle menu"
+          >
+            {menuOpen ? <X size={28} /> : <Menu size={28} />}
+          </button>
 
-        {/* Mobile menu toggle */}
-        <button
-          className="md:hidden text-slate-700 hover:text-pink-600"
-          onClick={() => setMenuOpen(!menuOpen)}
-          aria-label="Toggle menu"
-        >
-          {menuOpen ? <X size={28} /> : <Menu size={28} />}
-        </button>
+          <SolanaConnectButton compact />
+        </div>
       </div>
 
       {/* Mobile menu */}
