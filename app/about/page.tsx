@@ -152,7 +152,7 @@ That matters for a game with constant player actions, where smooth gameplay loop
 
         {/* Footer note */}
         <div className="mt-10 text-center text-sm text-slate-500">
-          © 2025 NFTBingo • Built on Solana • nftbingo.net
+          © 2025 NFTBingo • Built on Solana • NFTBingo.net
         </div>
 
       
