@@ -902,49 +902,52 @@ export default function PlayPage() {
       setCardsError("");
 
       try { ownedCardsAbortRef.current?.abort(); } catch {}
-      const ownedController = new AbortController();
-      ownedCardsAbortRef.current = ownedController;
+      ownedCardsAbortRef.current = null;
 
       const fetchWithRetry = async () => {
-        const url = `/api/cards/owned?owner=${encodeURIComponent(walletAddress)}&_ts=${Date.now()}`;
-        let lastErr: any = null;
+  const baseUrl = `/api/cards/owned?owner=${encodeURIComponent(walletAddress)}`;
+  let lastErr: any = null;
 
-        for (let attempt = 0; attempt < 4; attempt++) {
-          try {
-const t = setTimeout(() => ownedController.abort(), 30_000);
-let res: Response;
-try {
-  res = await fetch(url, { cache: "no-store", signal: ownedController.signal });
-} finally {
-  clearTimeout(t);
-}
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (cancelled) throw new Error("Cancelled");
 
-            // If you get rate limited, back off and retry.
-            if (res.status === 429) {
-              const wait = 600 * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
-              await sleep(wait);
-              lastErr = new Error("Rate limited (429).");
-              continue;
-            }
+    // NEW controller per attempt (prevents “stuck aborted” retries)
+    const attemptController = new AbortController();
+    ownedCardsAbortRef.current = attemptController;
 
-            const j = await res.json().catch(() => null);
-            if (!res.ok) {
-              throw new Error(j?.error || `Failed to load cards (${res.status})`);
-            }
-            if (!j?.ok) throw new Error(j?.error || "Failed to load cards");
-            return j;
-          } catch (e: any) {
-            lastErr = e;
-            // small backoff for transient network errors
-            await sleep(250 * Math.pow(2, attempt));
-          }
-        }
+    const t = setTimeout(() => attemptController.abort(), 30_000);
 
-        throw lastErr || new Error("Failed to load cards");
-      };
+    try {
+      const url = `${baseUrl}&_ts=${Date.now()}`; // fresh timestamp each attempt
+      const res = await fetch(url, { cache: "no-store", signal: attemptController.signal });
+
+      if (res.status === 429) {
+        const wait = 600 * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
+        await sleep(wait);
+        lastErr = new Error("Rate limited (429).");
+        continue;
+      }
+
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error || `Failed to load cards (${res.status})`);
+      if (!j?.ok) throw new Error(j?.error || "Failed to load cards");
+      return j;
+    } catch (e: any) {
+      lastErr = e;
+
+      // If it aborted, don’t instantly hammer again; backoff a bit.
+      await sleep(250 * Math.pow(2, attempt));
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  throw lastErr || new Error("Failed to load cards");
+};
 
       try {
         const j = await fetchWithRetry();
+        ownedCardsAbortRef.current = null;
         const owned: any[] = Array.isArray(j.cards) ? j.cards : [];
 
         // If the API returns extra NFTs, keep only collections we allow (when collection mint is available).
