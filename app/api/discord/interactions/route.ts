@@ -26,9 +26,18 @@ function verifyDiscordRequest(opts: {
 }
 
 export async function POST(req: Request) {
+  const publicKeyHex = process.env.DISCORD_PUBLIC_KEY;
+  if (!publicKeyHex) return json({ error: "Missing DISCORD_PUBLIC_KEY" }, 500);
+
+  const signature = req.headers.get("x-signature-ed25519");
+  const timestamp = req.headers.get("x-signature-timestamp");
+
   const rawBody = await req.text();
 
-  // Parse first so we can respond to PING immediately
+  // ✅ Verify signature FIRST (including PING)
+  const ok = verifyDiscordRequest({ publicKeyHex, signature, timestamp, rawBody });
+  if (!ok) return json({ error: "Bad signature" }, 401);
+
   let interaction: any;
   try {
     interaction = JSON.parse(rawBody);
@@ -36,23 +45,12 @@ export async function POST(req: Request) {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  // ✅ Discord endpoint verification / pings
-  // Respond BEFORE verifying signature
+  // ✅ Respond to Discord PING
   if (interaction?.type === 1) {
     return json({ type: 1 });
   }
 
-  // Everything else must be signed
-  const publicKeyHex = process.env.DISCORD_PUBLIC_KEY;
-  if (!publicKeyHex) return json({ error: "Missing DISCORD_PUBLIC_KEY" }, 500);
-
-  const signature = req.headers.get("x-signature-ed25519");
-  const timestamp = req.headers.get("x-signature-timestamp");
-
-  const ok = verifyDiscordRequest({ publicKeyHex, signature, timestamp, rawBody });
-  if (!ok) return json({ error: "Bad signature" }, 401);
-
-  // Stub response for now (we’ll replace with real command handling next)
+  // Temporary stub
   return json({ type: 4, data: { content: "Interactions endpoint is live ✅" } });
 }
 
