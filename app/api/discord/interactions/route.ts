@@ -52,36 +52,93 @@ export async function POST(req: Request) {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  // PING
+  // Discord PING
   if (interaction?.type === 1) return json({ type: 1 });
 
-  const name = interaction?.data?.name as string | undefined;
   const userId = interaction?.member?.user?.id || interaction?.user?.id;
   const channelId = interaction?.channel_id;
 
-  // Only allow /verify + /refresh in your verify channel
-  if ((name === "verify" || name === "refresh") && channelId !== VERIFY_CHANNEL()) {
-    return json({
-      type: 4,
-      data: {
-        flags: 64, // ephemeral
-        content: `Run this in <#${VERIFY_CHANNEL()}>.`,
-      },
-    });
+  // 5-minute cooldown per user for verify/refresh/button
+  async function enforceCooldown() {
+    if (!userId) return true;
+    const allowed = await checkCooldown(userId, 5 * 60);
+    return allowed;
   }
 
-  // 5-minute cooldown per user
-  if (userId && (name === "verify" || name === "refresh")) {
-    const allowed = await checkCooldown(userId, 5 * 60);
+  // =========================
+  // BUTTON CLICK HANDLER
+  // =========================
+  // This handles the persistent "Verify Wallet" button we post into your verify channel.
+  if (interaction?.type === 3 && interaction?.data?.custom_id === "start_verify_button") {
+    // Enforce verify-channel only
+    if (channelId !== VERIFY_CHANNEL()) {
+      return json({
+        type: 4,
+        data: {
+          flags: 64,
+          content: `Click this button in <#${VERIFY_CHANNEL()}>.`,
+        },
+      });
+    }
+
+    const allowed = await enforceCooldown();
     if (!allowed) {
       return json({
         type: 4,
         data: { flags: 64, content: "Cooldown: try again in a few minutes." },
       });
     }
+
+    const { state } = await createVerifyState(userId);
+    const url = `https://nftbingo.net/verify?state=${encodeURIComponent(state)}`;
+
+    return json({
+      type: 4,
+      data: {
+        flags: 64, // ephemeral
+        content: "Click below to verify your wallet:",
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 2,
+                style: 5,
+                label: "Open Verification",
+                url,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  }
+
+  // =========================
+  // SLASH COMMANDS
+  // =========================
+  const name = interaction?.data?.name as string | undefined;
+
+  // Only allow /verify and /refresh in your verify channel
+  if ((name === "verify" || name === "refresh") && channelId !== VERIFY_CHANNEL()) {
+    return json({
+      type: 4,
+      data: {
+        flags: 64,
+        content: `Run this in <#${VERIFY_CHANNEL()}>.`,
+      },
+    });
   }
 
   if (name === "verify") {
+    const allowed = await enforceCooldown();
+    if (!allowed) {
+      return json({
+        type: 4,
+        data: { flags: 64, content: "Cooldown: try again in a few minutes." },
+      });
+    }
+
     const { state } = await createVerifyState(userId);
     const url = `https://nftbingo.net/verify?state=${encodeURIComponent(state)}`;
 
@@ -108,6 +165,14 @@ export async function POST(req: Request) {
   }
 
   if (name === "refresh") {
+    const allowed = await enforceCooldown();
+    if (!allowed) {
+      return json({
+        type: 4,
+        data: { flags: 64, content: "Cooldown: try again in a few minutes." },
+      });
+    }
+
     const linked = await getLinked(userId);
     if (!linked) {
       return json({
@@ -116,8 +181,9 @@ export async function POST(req: Request) {
       });
     }
 
-    // We do the refresh work on your API route (same logic as verify complete)
-    const url = `https://nftbingo.net/verify?state=${encodeURIComponent((await createVerifyState(userId)).state)}`;
+    const { state } = await createVerifyState(userId);
+    const url = `https://nftbingo.net/verify?state=${encodeURIComponent(state)}`;
+
     return json({
       type: 4,
       data: {
@@ -126,9 +192,7 @@ export async function POST(req: Request) {
         components: [
           {
             type: 1,
-            components: [
-              { type: 2, style: 5, label: "Refresh Roles", url },
-            ],
+            components: [{ type: 2, style: 5, label: "Refresh Roles", url }],
           },
         ],
       },
@@ -137,7 +201,7 @@ export async function POST(req: Request) {
 
   return json({
     type: 4,
-    data: { flags: 64, content: "Unhandled command." },
+    data: { flags: 64, content: "Unhandled interaction." },
   });
 }
 
