@@ -9,19 +9,32 @@ function json(body: any, status = 200) {
   });
 }
 
-// This endpoint returns the exact message to sign for the given state.
-// We do NOT create state here (Discord already created it).
 export async function POST(req: Request) {
-  const { state, wallet } = await req.json().catch(() => ({}));
+  try {
+    const body = await req.json().catch(() => ({} as any));
+    const state = typeof body?.state === "string" ? body.state : "";
+    const wallet = typeof body?.wallet === "string" ? body.wallet : "";
 
-  if (!state || typeof state !== "string") return json({ error: "Missing state" }, 400);
-  if (!wallet || typeof wallet !== "string") return json({ error: "Missing wallet" }, 400);
+    if (!state) return json({ error: "Missing state. Go back to Discord and run /verify again." }, 400);
+    if (!wallet) return json({ error: "Missing wallet. Connect your wallet first." }, 400);
 
-  const raw = await redis.get<string>(`verify:state:${state}`);
-  if (!raw) return json({ error: "State expired. Run /verify again in Discord." }, 400);
+    const raw = await redis.get<string>(`verify:state:${state}`);
+    if (!raw) return json({ error: "State expired. Go back to Discord and run /verify again." }, 400);
 
-  const parsed = JSON.parse(raw) as { nonce: string; discordUserId: string };
-  const message = `NFTBingo verification\n\nWallet: ${wallet}\nNonce: ${parsed.nonce}\n\nSign to verify ownership.`;
+    const parsed = JSON.parse(raw) as { nonce: string; discordUserId: string };
 
-  return json({ message });
+    const message =
+      `NFTBingo verification\n\n` +
+      `Wallet: ${wallet}\n` +
+      `Nonce: ${parsed.nonce}\n\n` +
+      `Sign to verify ownership.`;
+
+    return json({ ok: true, message });
+  } catch (e: any) {
+    return json({ error: e?.message || "Verify start failed." }, 500);
+  }
+}
+
+export async function GET() {
+  return json({ ok: true });
 }
