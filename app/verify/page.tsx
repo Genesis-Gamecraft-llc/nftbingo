@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
 async function safeJson(res: Response) {
   const text = await res.text();
@@ -28,8 +27,6 @@ function stringifyErr(v: any): string {
 
 const PRIMARY_BTN =
   "bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:scale-105 transition";
-const SECONDARY_BTN =
-  "bg-white/10 text-white font-semibold px-4 py-2 rounded-xl shadow hover:bg-white/15 transition border border-white/15";
 
 function isMobileUA() {
   if (typeof navigator === "undefined") return false;
@@ -51,33 +48,10 @@ export default function VerifyPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
-  const [currentUrl, setCurrentUrl] = useState("");
-  const [origin, setOrigin] = useState("");
-
   useEffect(() => {
     setStatus("");
     setError("");
   }, [state, wallet]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setCurrentUrl(window.location.href);
-    setOrigin(window.location.origin);
-  }, []);
-
-  const phantomUrl = useMemo(() => {
-    if (!currentUrl) return "";
-    const u = encodeURIComponent(currentUrl);
-    const ref = encodeURIComponent(origin || "");
-    return `https://phantom.app/ul/browse/${u}?ref=${ref}`;
-  }, [currentUrl, origin]);
-
-  const solflareUrl = useMemo(() => {
-    if (!currentUrl) return "";
-    const u = encodeURIComponent(currentUrl);
-    const ref = encodeURIComponent(origin || "");
-    return `https://solflare.com/ul/v1/browse/${u}?ref=${ref}`;
-  }, [currentUrl, origin]);
 
   async function doVerify() {
     setError("");
@@ -85,14 +59,16 @@ export default function VerifyPage() {
 
     if (!state) {
       setStatus("");
-      setError("Missing state token. Go back to Discord and click Verify Wallet again.");
+      setError("State expired or invalid. Go back to Discord and click Verify Wallet again.");
       return;
     }
+
     if (!connected || !publicKey) {
       setStatus("");
-      setError("Connect your wallet first.");
+      setError("Connect your wallet using the Connect button in the top bar, then click Verify Now.");
       return;
     }
+
     if (!signMessage) {
       setStatus("");
       setError("Your wallet does not support message signing.");
@@ -120,9 +96,7 @@ export default function VerifyPage() {
 
       const message: any = startJson?.message;
       if (typeof message !== "string" || !message.trim()) {
-        throw new Error(
-          "Verify start did not return a valid message to sign. (Expected JSON { message: string })."
-        );
+        throw new Error("Verify start did not return a valid message to sign.");
       }
 
       // 2) Sign message
@@ -170,7 +144,7 @@ export default function VerifyPage() {
       {showMobileTip && (
         <div className="mt-4 rounded-xl border border-white/15 bg-white/5 p-4 text-sm">
           <b>Mobile tip:</b> If wallet connect doesn’t open from Discord, tap <b>⋯</b> and choose{" "}
-          <b>Open in Browser</b>. Then come back and verify.
+          <b>Open in Browser</b>.
         </div>
       )}
 
@@ -183,30 +157,11 @@ export default function VerifyPage() {
         </div>
       </div>
 
-      {/* Connect Wallet */}
-      <div className="mt-4">
-        {/* WalletMultiButton brings up Phantom/Solflare options on desktop & mobile */}
-        <WalletMultiButton className={PRIMARY_BTN} />
-      </div>
-
-      {/* Open in wallet apps (helpful on mobile) */}
-      {(phantomUrl || solflareUrl) && (
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <a className={SECONDARY_BTN + " text-center"} href={phantomUrl} target="_blank" rel="noreferrer">
-            Open in Phantom
-          </a>
-          <a className={SECONDARY_BTN + " text-center"} href={solflareUrl} target="_blank" rel="noreferrer">
-            Open in Solflare
-          </a>
-        </div>
-      )}
-
-      {/* Verify */}
       <button
         onClick={doVerify}
         className={PRIMARY_BTN + " mt-4 w-full"}
         disabled={!state || !connected || !publicKey}
-        title={!state ? "Missing state. Go back to Discord and click Verify Wallet again." : ""}
+        title={!state ? "Go back to Discord and click Verify Wallet again." : ""}
       >
         Verify Now
       </button>

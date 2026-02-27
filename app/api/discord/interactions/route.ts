@@ -1,3 +1,4 @@
+// app/api/discord/interactions/route.ts
 export const runtime = "nodejs";
 
 import nacl from "tweetnacl";
@@ -23,7 +24,7 @@ function verifyDiscordRequest(opts: {
   const sig = Buffer.from(signature, "hex");
   const msg = Buffer.from(timestamp + rawBody);
 
-  return nacl.sign.detached.verify(msg, sig, pk);
+  return nacl.sign.detached.verify(msg, sig, pk,);
 }
 
 function getEnv(name: string) {
@@ -36,17 +37,22 @@ const APP_ORIGIN = () => getEnv("APP_ORIGIN") || "https://nftbingo.net";
 
 function buildVerifyUrls(state: string) {
   const base = `${APP_ORIGIN().replace(/\/$/, "")}/verify?state=${encodeURIComponent(state)}`;
+
+  // We need two encodings:
+  // - For universal links, Phantom/Solflare expect the target URL to be URL-encoded in the path.
+  // - For the phantom:// scheme, Phantom expects a normal URL after /browse/ (still URL-encoded is safest).
+  const encodedBase = encodeURIComponent(base);
   const ref = encodeURIComponent(APP_ORIGIN().replace(/\/$/, ""));
 
-  // Official mobile "browse" deeplinks:
-  // Phantom: https://phantom.app/ul/browse/<url>?ref=<ref>
-  // Solflare: https://solflare.com/ul/v1/browse/<url>?ref=<ref>
-  const encodedBase = encodeURIComponent(base);
+  // Universal links (sometimes fail inside Discord webview on Android)
+  const phantomUniversal = `https://phantom.app/ul/browse/${encodedBase}?ref=${ref}`;
+  const solflareUniversal = `https://solflare.com/ul/v1/browse/${encodedBase}?ref=${ref}`;
 
-  const phantom = `https://phantom.app/ul/browse/${encodedBase}?ref=${ref}`;
-  const solflare = `https://solflare.com/ul/v1/browse/${encodedBase}?ref=${ref}`;
+  // ✅ Fallback scheme for Phantom (often succeeds where universal links don't)
+  // Note: Some browsers/webviews may block custom schemes; that’s why we keep BOTH.
+  const phantomScheme = `phantom://browse/${encodedBase}`;
 
-  return { base, phantom, solflare };
+  return { base, phantomUniversal, phantomScheme, solflareUniversal };
 }
 
 function verifyChannelOnlyMessage() {
@@ -55,7 +61,7 @@ function verifyChannelOnlyMessage() {
 }
 
 function mobileTipText() {
-  return "Mobile tip: If the wallet connect doesn’t open from Discord, tap ⋯ and choose **Open in Browser**.";
+  return "Mobile tip: If the verify page can’t connect your wallet from Discord, tap ⋯ and choose **Open in Browser**.";
 }
 
 export async function POST(req: Request) {
@@ -100,27 +106,20 @@ export async function POST(req: Request) {
     // BUTTON CLICK HANDLER
     // =========================
     if (interaction?.type === 3 && interaction?.data?.custom_id === "start_verify_button") {
-      // Enforce verify-channel only (if configured)
       if (verifyChannelId && channelId !== verifyChannelId) {
         return json({
           type: 4,
-          data: {
-            flags: 64,
-            content: `Click this button in <#${verifyChannelId}>.`,
-          },
+          data: { flags: 64, content: `Click this button in <#${verifyChannelId}>.` },
         });
       }
 
       const allowed = await enforceCooldown();
       if (!allowed) {
-        return json({
-          type: 4,
-          data: { flags: 64, content: "Cooldown: try again in a few minutes." },
-        });
+        return json({ type: 4, data: { flags: 64, content: "Cooldown: try again in a few minutes." } });
       }
 
       const { state } = await createVerifyState(userId);
-      const { base, phantom, solflare } = buildVerifyUrls(state);
+      const { base, phantomUniversal, phantomScheme, solflareUniversal } = buildVerifyUrls(state);
 
       return json({
         type: 4,
@@ -132,8 +131,9 @@ export async function POST(req: Request) {
               type: 1,
               components: [
                 { type: 2, style: 5, label: "Open Verification", url: base },
-                { type: 2, style: 5, label: "Open in Phantom", url: phantom },
-                { type: 2, style: 5, label: "Open in Solflare", url: solflare },
+                { type: 2, style: 5, label: "Open in Solflare", url: solflareUniversal },
+                { type: 2, style: 5, label: "Open in Phantom", url: phantomUniversal },
+                { type: 2, style: 5, label: "Open in Phantom (alt)", url: phantomScheme },
               ],
             },
           ],
@@ -146,28 +146,18 @@ export async function POST(req: Request) {
     // =========================
     const name = interaction?.data?.name as string | undefined;
 
-    // Only allow /verify and /refresh in your verify channel (if configured)
     if ((name === "verify" || name === "refresh") && verifyChannelId && channelId !== verifyChannelId) {
-      return json({
-        type: 4,
-        data: {
-          flags: 64,
-          content: verifyChannelOnlyMessage(),
-        },
-      });
+      return json({ type: 4, data: { flags: 64, content: verifyChannelOnlyMessage() } });
     }
 
     if (name === "verify") {
       const allowed = await enforceCooldown();
       if (!allowed) {
-        return json({
-          type: 4,
-          data: { flags: 64, content: "Cooldown: try again in a few minutes." },
-        });
+        return json({ type: 4, data: { flags: 64, content: "Cooldown: try again in a few minutes." } });
       }
 
       const { state } = await createVerifyState(userId);
-      const { base, phantom, solflare } = buildVerifyUrls(state);
+      const { base, phantomUniversal, phantomScheme, solflareUniversal } = buildVerifyUrls(state);
 
       return json({
         type: 4,
@@ -179,8 +169,9 @@ export async function POST(req: Request) {
               type: 1,
               components: [
                 { type: 2, style: 5, label: "Verify Wallet", url: base },
-                { type: 2, style: 5, label: "Open in Phantom", url: phantom },
-                { type: 2, style: 5, label: "Open in Solflare", url: solflare },
+                { type: 2, style: 5, label: "Open in Solflare", url: solflareUniversal },
+                { type: 2, style: 5, label: "Open in Phantom", url: phantomUniversal },
+                { type: 2, style: 5, label: "Open in Phantom (alt)", url: phantomScheme },
               ],
             },
           ],
@@ -191,18 +182,12 @@ export async function POST(req: Request) {
     if (name === "refresh") {
       const allowed = await enforceCooldown();
       if (!allowed) {
-        return json({
-          type: 4,
-          data: { flags: 64, content: "Cooldown: try again in a few minutes." },
-        });
+        return json({ type: 4, data: { flags: 64, content: "Cooldown: try again in a few minutes." } });
       }
 
       const linked = await getLinked(userId);
-
-      // Refresh should NOT require re-verifying just because roles changed.
-      // But your current web flow refreshes roles after a quick sign — keep that, and also tell them they're linked.
       const { state } = await createVerifyState(userId);
-      const { base, phantom, solflare } = buildVerifyUrls(state);
+      const { base, phantomUniversal, phantomScheme, solflareUniversal } = buildVerifyUrls(state);
 
       if (!linked) {
         return json({
@@ -215,8 +200,9 @@ export async function POST(req: Request) {
                 type: 1,
                 components: [
                   { type: 2, style: 5, label: "Verify Wallet", url: base },
-                  { type: 2, style: 5, label: "Open in Phantom", url: phantom },
-                  { type: 2, style: 5, label: "Open in Solflare", url: solflare },
+                  { type: 2, style: 5, label: "Open in Solflare", url: solflareUniversal },
+                  { type: 2, style: 5, label: "Open in Phantom", url: phantomUniversal },
+                  { type: 2, style: 5, label: "Open in Phantom (alt)", url: phantomScheme },
                 ],
               },
             ],
@@ -234,8 +220,9 @@ export async function POST(req: Request) {
               type: 1,
               components: [
                 { type: 2, style: 5, label: "Refresh Roles", url: base },
-                { type: 2, style: 5, label: "Open in Phantom", url: phantom },
-                { type: 2, style: 5, label: "Open in Solflare", url: solflare },
+                { type: 2, style: 5, label: "Open in Solflare", url: solflareUniversal },
+                { type: 2, style: 5, label: "Open in Phantom", url: phantomUniversal },
+                { type: 2, style: 5, label: "Open in Phantom (alt)", url: phantomScheme },
               ],
             },
           ],
@@ -243,20 +230,14 @@ export async function POST(req: Request) {
       });
     }
 
-    // Always respond to avoid "This interaction failed"
-    return json({
-      type: 4,
-      data: { flags: 64, content: "Unhandled interaction." },
-    });
+    // Always respond so Discord never shows "This interaction failed"
+    return json({ type: 4, data: { flags: 64, content: "Unhandled interaction." } });
   } catch (e: any) {
-    // Return a valid interaction response even on errors so Discord doesn't show "interaction failed"
+    // Return a valid Discord response even on errors
     const msg = String(e?.message || e || "Unknown error");
     return json({
       type: 4,
-      data: {
-        flags: 64,
-        content: `Verification error: ${msg}`,
-      },
+      data: { flags: 64, content: `Verification error: ${msg}` },
     });
   }
 }
