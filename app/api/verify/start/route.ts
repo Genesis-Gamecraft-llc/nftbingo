@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { redis } from "@/lib/upstash";
+import { getVerifyState } from "@/lib/verify-store";
 
 function json(body: any, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -18,15 +18,19 @@ export async function POST(req: Request) {
     if (!state) return json({ error: "Missing state. Go back to Discord and run /verify again." }, 400);
     if (!wallet) return json({ error: "Missing wallet. Connect your wallet first." }, 400);
 
-    const raw = await redis.get<string>(`verify:state:${state}`);
-    if (!raw) return json({ error: "State expired. Go back to Discord and run /verify again." }, 400);
-
-    const parsed = JSON.parse(raw) as { nonce: string; discordUserId: string };
+    // ✅ Safe parse (no JSON.parse crash)
+    const st = await getVerifyState(state);
+    if (!st) {
+      return json(
+        { error: "State expired or invalid. Go back to Discord and click Verify Wallet again." },
+        400
+      );
+    }
 
     const message =
       `NFTBingo verification\n\n` +
       `Wallet: ${wallet}\n` +
-      `Nonce: ${parsed.nonce}\n\n` +
+      `Nonce: ${st.nonce}\n\n` +
       `Sign to verify ownership.`;
 
     return json({ ok: true, message });
