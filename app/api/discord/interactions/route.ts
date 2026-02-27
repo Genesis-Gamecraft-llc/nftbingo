@@ -26,183 +26,239 @@ function verifyDiscordRequest(opts: {
   return nacl.sign.detached.verify(msg, sig, pk);
 }
 
-function must(name: string) {
+function getEnv(name: string) {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing ${name}`);
-  return v;
+  return v && String(v).trim() ? String(v).trim() : "";
 }
 
-const VERIFY_CHANNEL = () => must("DISCORD_VERIFY_CHANNEL_ID");
+const VERIFY_CHANNEL_ID = () => getEnv("DISCORD_VERIFY_CHANNEL_ID");
+const APP_ORIGIN = () => getEnv("APP_ORIGIN") || "https://nftbingo.net";
+
+function buildVerifyUrls(state: string) {
+  const base = `${APP_ORIGIN().replace(/\/$/, "")}/verify?state=${encodeURIComponent(state)}`;
+  const ref = encodeURIComponent(APP_ORIGIN().replace(/\/$/, ""));
+
+  // Official mobile "browse" deeplinks:
+  // Phantom: https://phantom.app/ul/browse/<url>?ref=<ref>
+  // Solflare: https://solflare.com/ul/v1/browse/<url>?ref=<ref>
+  const encodedBase = encodeURIComponent(base);
+
+  const phantom = `https://phantom.app/ul/browse/${encodedBase}?ref=${ref}`;
+  const solflare = `https://solflare.com/ul/v1/browse/${encodedBase}?ref=${ref}`;
+
+  return { base, phantom, solflare };
+}
+
+function verifyChannelOnlyMessage() {
+  const ch = VERIFY_CHANNEL_ID();
+  return ch ? `Run this in <#${ch}>.` : "Run this in the verify channel.";
+}
+
+function mobileTipText() {
+  return "Mobile tip: If the wallet connect doesn’t open from Discord, tap ⋯ and choose **Open in Browser**.";
+}
 
 export async function POST(req: Request) {
-  const publicKeyHex = process.env.DISCORD_PUBLIC_KEY;
-  if (!publicKeyHex) return json({ error: "Missing DISCORD_PUBLIC_KEY" }, 500);
-
-  const signature = req.headers.get("x-signature-ed25519");
-  const timestamp = req.headers.get("x-signature-timestamp");
-  const rawBody = await req.text();
-
-  const ok = verifyDiscordRequest({ publicKeyHex, signature, timestamp, rawBody });
-  if (!ok) return json({ error: "Bad signature" }, 401);
-
-  let interaction: any;
   try {
-    interaction = JSON.parse(rawBody);
-  } catch {
-    return json({ error: "Invalid JSON" }, 400);
-  }
+    const publicKeyHex = getEnv("DISCORD_PUBLIC_KEY");
+    if (!publicKeyHex) return json({ error: "Missing DISCORD_PUBLIC_KEY" }, 500);
 
-  // Discord PING
-  if (interaction?.type === 1) return json({ type: 1 });
+    const signature = req.headers.get("x-signature-ed25519");
+    const timestamp = req.headers.get("x-signature-timestamp");
+    const rawBody = await req.text();
 
-  const userId = interaction?.member?.user?.id || interaction?.user?.id;
-  const channelId = interaction?.channel_id;
+    const ok = verifyDiscordRequest({ publicKeyHex, signature, timestamp, rawBody });
+    if (!ok) return json({ error: "Bad signature" }, 401);
 
-  // 5-minute cooldown per user for verify/refresh/button
-  async function enforceCooldown() {
-    if (!userId) return true;
-    const allowed = await checkCooldown(userId, 5 * 60);
-    return allowed;
-  }
+    let interaction: any;
+    try {
+      interaction = JSON.parse(rawBody);
+    } catch {
+      return json({ error: "Invalid JSON" }, 400);
+    }
 
-  // =========================
-  // BUTTON CLICK HANDLER
-  // =========================
-  // This handles the persistent "Verify Wallet" button we post into your verify channel.
-  if (interaction?.type === 3 && interaction?.data?.custom_id === "start_verify_button") {
-    // Enforce verify-channel only
-    if (channelId !== VERIFY_CHANNEL()) {
+    // Discord PING
+    if (interaction?.type === 1) return json({ type: 1 });
+
+    const userId = interaction?.member?.user?.id || interaction?.user?.id;
+    const channelId = interaction?.channel_id;
+
+    // 5-minute cooldown per user for verify/refresh/button
+    async function enforceCooldown() {
+      if (!userId) return true;
+      try {
+        return await checkCooldown(userId, 5 * 60);
+      } catch {
+        // If cooldown storage fails, don't hard-fail the interaction.
+        return true;
+      }
+    }
+
+    const verifyChannelId = VERIFY_CHANNEL_ID();
+
+    // =========================
+    // BUTTON CLICK HANDLER
+    // =========================
+    if (interaction?.type === 3 && interaction?.data?.custom_id === "start_verify_button") {
+      // Enforce verify-channel only (if configured)
+      if (verifyChannelId && channelId !== verifyChannelId) {
+        return json({
+          type: 4,
+          data: {
+            flags: 64,
+            content: `Click this button in <#${verifyChannelId}>.`,
+          },
+        });
+      }
+
+      const allowed = await enforceCooldown();
+      if (!allowed) {
+        return json({
+          type: 4,
+          data: { flags: 64, content: "Cooldown: try again in a few minutes." },
+        });
+      }
+
+      const { state } = await createVerifyState(userId);
+      const { base, phantom, solflare } = buildVerifyUrls(state);
+
       return json({
         type: 4,
         data: {
           flags: 64,
-          content: `Click this button in <#${VERIFY_CHANNEL()}>.`,
+          content: `Click below to verify your wallet.\n${mobileTipText()}`,
+          components: [
+            {
+              type: 1,
+              components: [
+                { type: 2, style: 5, label: "Open Verification", url: base },
+                { type: 2, style: 5, label: "Open in Phantom", url: phantom },
+                { type: 2, style: 5, label: "Open in Solflare", url: solflare },
+              ],
+            },
+          ],
         },
       });
     }
 
-    const allowed = await enforceCooldown();
-    if (!allowed) {
+    // =========================
+    // SLASH COMMANDS
+    // =========================
+    const name = interaction?.data?.name as string | undefined;
+
+    // Only allow /verify and /refresh in your verify channel (if configured)
+    if ((name === "verify" || name === "refresh") && verifyChannelId && channelId !== verifyChannelId) {
       return json({
         type: 4,
-        data: { flags: 64, content: "Cooldown: try again in a few minutes." },
+        data: {
+          flags: 64,
+          content: verifyChannelOnlyMessage(),
+        },
       });
     }
 
-    const { state } = await createVerifyState(userId);
-    const url = `https://nftbingo.net/verify?state=${encodeURIComponent(state)}`;
+    if (name === "verify") {
+      const allowed = await enforceCooldown();
+      if (!allowed) {
+        return json({
+          type: 4,
+          data: { flags: 64, content: "Cooldown: try again in a few minutes." },
+        });
+      }
 
-    return json({
-      type: 4,
-      data: {
-        flags: 64, // ephemeral
-        content: "Click below to verify your wallet:",
-        components: [
-          {
-            type: 1,
+      const { state } = await createVerifyState(userId);
+      const { base, phantom, solflare } = buildVerifyUrls(state);
+
+      return json({
+        type: 4,
+        data: {
+          flags: 64,
+          content: `Click to verify your wallet:\n${mobileTipText()}`,
+          components: [
+            {
+              type: 1,
+              components: [
+                { type: 2, style: 5, label: "Verify Wallet", url: base },
+                { type: 2, style: 5, label: "Open in Phantom", url: phantom },
+                { type: 2, style: 5, label: "Open in Solflare", url: solflare },
+              ],
+            },
+          ],
+        },
+      });
+    }
+
+    if (name === "refresh") {
+      const allowed = await enforceCooldown();
+      if (!allowed) {
+        return json({
+          type: 4,
+          data: { flags: 64, content: "Cooldown: try again in a few minutes." },
+        });
+      }
+
+      const linked = await getLinked(userId);
+
+      // Refresh should NOT require re-verifying just because roles changed.
+      // But your current web flow refreshes roles after a quick sign — keep that, and also tell them they're linked.
+      const { state } = await createVerifyState(userId);
+      const { base, phantom, solflare } = buildVerifyUrls(state);
+
+      if (!linked) {
+        return json({
+          type: 4,
+          data: {
+            flags: 64,
+            content: `You’re not linked yet. Use /verify first.\n${mobileTipText()}`,
             components: [
               {
-                type: 2,
-                style: 5,
-                label: "Open Verification",
-                url,
+                type: 1,
+                components: [
+                  { type: 2, style: 5, label: "Verify Wallet", url: base },
+                  { type: 2, style: 5, label: "Open in Phantom", url: phantom },
+                  { type: 2, style: 5, label: "Open in Solflare", url: solflare },
+                ],
               },
             ],
           },
-        ],
-      },
+        });
+      }
+
+      return json({
+        type: 4,
+        data: {
+          flags: 64,
+          content: `You’re already linked to **${linked.wallet}**.\nOpen the page below to refresh holder roles (quick sign).\n${mobileTipText()}`,
+          components: [
+            {
+              type: 1,
+              components: [
+                { type: 2, style: 5, label: "Refresh Roles", url: base },
+                { type: 2, style: 5, label: "Open in Phantom", url: phantom },
+                { type: 2, style: 5, label: "Open in Solflare", url: solflare },
+              ],
+            },
+          ],
+        },
+      });
+    }
+
+    // Always respond to avoid "This interaction failed"
+    return json({
+      type: 4,
+      data: { flags: 64, content: "Unhandled interaction." },
     });
-  }
-
-  // =========================
-  // SLASH COMMANDS
-  // =========================
-  const name = interaction?.data?.name as string | undefined;
-
-  // Only allow /verify and /refresh in your verify channel
-  if ((name === "verify" || name === "refresh") && channelId !== VERIFY_CHANNEL()) {
+  } catch (e: any) {
+    // Return a valid interaction response even on errors so Discord doesn't show "interaction failed"
+    const msg = String(e?.message || e || "Unknown error");
     return json({
       type: 4,
       data: {
         flags: 64,
-        content: `Run this in <#${VERIFY_CHANNEL()}>.`,
+        content: `Verification error: ${msg}`,
       },
     });
   }
-
-  if (name === "verify") {
-    const allowed = await enforceCooldown();
-    if (!allowed) {
-      return json({
-        type: 4,
-        data: { flags: 64, content: "Cooldown: try again in a few minutes." },
-      });
-    }
-
-    const { state } = await createVerifyState(userId);
-    const url = `https://nftbingo.net/verify?state=${encodeURIComponent(state)}`;
-
-    return json({
-      type: 4,
-      data: {
-        flags: 64,
-        content: "Click to verify your wallet:",
-        components: [
-          {
-            type: 1,
-            components: [
-              {
-                type: 2,
-                style: 5,
-                label: "Verify Wallet",
-                url,
-              },
-            ],
-          },
-        ],
-      },
-    });
-  }
-
-  if (name === "refresh") {
-    const allowed = await enforceCooldown();
-    if (!allowed) {
-      return json({
-        type: 4,
-        data: { flags: 64, content: "Cooldown: try again in a few minutes." },
-      });
-    }
-
-    const linked = await getLinked(userId);
-    if (!linked) {
-      return json({
-        type: 4,
-        data: { flags: 64, content: "You’re not linked yet. Use /verify first." },
-      });
-    }
-
-    const { state } = await createVerifyState(userId);
-    const url = `https://nftbingo.net/verify?state=${encodeURIComponent(state)}`;
-
-    return json({
-      type: 4,
-      data: {
-        flags: 64,
-        content: "Re-verify to refresh your roles (quick sign):",
-        components: [
-          {
-            type: 1,
-            components: [{ type: 2, style: 5, label: "Refresh Roles", url }],
-          },
-        ],
-      },
-    });
-  }
-
-  return json({
-    type: 4,
-    data: { flags: 64, content: "Unhandled interaction." },
-  });
 }
 
 export async function GET() {
