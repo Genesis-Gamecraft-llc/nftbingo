@@ -7,10 +7,21 @@ import { useWallet } from "@solana/wallet-adapter-react";
 async function safeJson(res: Response) {
   const text = await res.text();
   if (!text) return { __raw: "" };
+
   try {
     return JSON.parse(text);
   } catch {
     return { __raw: text };
+  }
+}
+
+function stringifyErr(v: any): string {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
   }
 }
 
@@ -50,6 +61,7 @@ export default function VerifyPage() {
     }
 
     try {
+      // 1) Get message to sign
       const startRes = await fetch("/api/verify/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -57,18 +69,30 @@ export default function VerifyPage() {
       });
 
       const startJson: any = await safeJson(startRes);
+
       if (!startRes.ok) {
-        throw new Error(startJson?.error || startJson?.__raw || `Verify start failed (HTTP ${startRes.status})`);
+        const msg =
+          stringifyErr(startJson?.error) ||
+          stringifyErr(startJson?.message) ||
+          stringifyErr(startJson?.__raw) ||
+          `Verify start failed (HTTP ${startRes.status})`;
+        throw new Error(msg);
       }
 
-      const message: string = startJson?.message;
-      if (!message) throw new Error("Verify start did not return a message to sign.");
+      const message: any = startJson?.message;
+      if (typeof message !== "string" || !message.trim()) {
+        throw new Error(
+          "Verify start did not return a valid message to sign. (Expected JSON { message: string })."
+        );
+      }
 
+      // 2) Sign message
       setStatus("Sign the message in your wallet...");
       const sigBytes = await signMessage(new TextEncoder().encode(message));
       const bs58 = (await import("bs58")).default;
       const signatureBase58 = bs58.encode(sigBytes);
 
+      // 3) Complete verification + assign roles
       setStatus("Verifying holdings and assigning roles...");
       const res = await fetch("/api/verify/complete", {
         method: "POST",
@@ -77,8 +101,14 @@ export default function VerifyPage() {
       });
 
       const json: any = await safeJson(res);
+
       if (!res.ok) {
-        throw new Error(json?.error || json?.__raw || `Verification failed (HTTP ${res.status})`);
+        const msg =
+          stringifyErr(json?.error) ||
+          stringifyErr(json?.message) ||
+          stringifyErr(json?.__raw) ||
+          `Verification failed (HTTP ${res.status})`;
+        throw new Error(msg);
       }
 
       setStatus("Success! Roles updated. You can return to Discord.");
@@ -91,6 +121,7 @@ export default function VerifyPage() {
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
       <h1 style={{ fontSize: 28, fontWeight: 800 }}>NFTBingo Holder Verification</h1>
+
       <p style={{ marginTop: 8, opacity: 0.85 }}>
         Connect your wallet and sign a message to verify ownership of your NFTBingo cards.
       </p>
