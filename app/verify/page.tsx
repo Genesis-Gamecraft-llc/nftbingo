@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
 async function safeJson(res: Response) {
   const text = await res.text();
@@ -25,6 +26,21 @@ function stringifyErr(v: any): string {
   }
 }
 
+const PRIMARY_BTN =
+  "bg-gradient-to-r from-pink-600 via-fuchsia-600 to-indigo-600 text-white font-semibold px-4 py-2 rounded-xl shadow hover:scale-105 transition";
+const SECONDARY_BTN =
+  "bg-white/10 text-white font-semibold px-4 py-2 rounded-xl shadow hover:bg-white/15 transition border border-white/15";
+
+function isMobileUA() {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function isDiscordInAppUA() {
+  if (typeof navigator === "undefined") return false;
+  return /Discord/i.test(navigator.userAgent);
+}
+
 export default function VerifyPage() {
   const params = useSearchParams();
   const state = params.get("state") || "";
@@ -35,10 +51,33 @@ export default function VerifyPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
+  const [currentUrl, setCurrentUrl] = useState("");
+  const [origin, setOrigin] = useState("");
+
   useEffect(() => {
     setStatus("");
     setError("");
   }, [state, wallet]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setCurrentUrl(window.location.href);
+    setOrigin(window.location.origin);
+  }, []);
+
+  const phantomUrl = useMemo(() => {
+    if (!currentUrl) return "";
+    const u = encodeURIComponent(currentUrl);
+    const ref = encodeURIComponent(origin || "");
+    return `https://phantom.app/ul/browse/${u}?ref=${ref}`;
+  }, [currentUrl, origin]);
+
+  const solflareUrl = useMemo(() => {
+    if (!currentUrl) return "";
+    const u = encodeURIComponent(currentUrl);
+    const ref = encodeURIComponent(origin || "");
+    return `https://solflare.com/ul/v1/browse/${u}?ref=${ref}`;
+  }, [currentUrl, origin]);
 
   async function doVerify() {
     setError("");
@@ -46,7 +85,7 @@ export default function VerifyPage() {
 
     if (!state) {
       setStatus("");
-      setError("Missing state token. Go back to Discord and run /verify again.");
+      setError("Missing state token. Go back to Discord and click Verify Wallet again.");
       return;
     }
     if (!connected || !publicKey) {
@@ -118,49 +157,65 @@ export default function VerifyPage() {
     }
   }
 
-  return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 800 }}>NFTBingo Holder Verification</h1>
+  const showMobileTip = isMobileUA() && isDiscordInAppUA();
 
-      <p style={{ marginTop: 8, opacity: 0.85 }}>
+  return (
+    <div className="mx-auto max-w-[720px] p-6">
+      <h1 className="text-[28px] font-extrabold">NFTBingo Holder Verification</h1>
+
+      <p className="mt-2 opacity-85">
         Connect your wallet and sign a message to verify ownership of your NFTBingo cards.
       </p>
 
-      <div
-        style={{
-          marginTop: 16,
-          padding: 12,
-          border: "1px solid rgba(255,255,255,0.15)",
-          borderRadius: 12,
-        }}
-      >
+      {showMobileTip && (
+        <div className="mt-4 rounded-xl border border-white/15 bg-white/5 p-4 text-sm">
+          <b>Mobile tip:</b> If wallet connect doesn’t open from Discord, tap <b>⋯</b> and choose{" "}
+          <b>Open in Browser</b>. Then come back and verify.
+        </div>
+      )}
+
+      <div className="mt-4 rounded-xl border border-white/15 p-4">
         <div>
           <b>State:</b> {state ? "✅" : "❌"}
         </div>
-        <div>
+        <div className="break-all">
           <b>Wallet:</b> {wallet || "(not connected)"}
         </div>
       </div>
 
+      {/* Connect Wallet */}
+      <div className="mt-4">
+        {/* WalletMultiButton brings up Phantom/Solflare options on desktop & mobile */}
+        <WalletMultiButton className={PRIMARY_BTN} />
+      </div>
+
+      {/* Open in wallet apps (helpful on mobile) */}
+      {(phantomUrl || solflareUrl) && (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <a className={SECONDARY_BTN + " text-center"} href={phantomUrl} target="_blank" rel="noreferrer">
+            Open in Phantom
+          </a>
+          <a className={SECONDARY_BTN + " text-center"} href={solflareUrl} target="_blank" rel="noreferrer">
+            Open in Solflare
+          </a>
+        </div>
+      )}
+
+      {/* Verify */}
       <button
         onClick={doVerify}
-        style={{
-          marginTop: 16,
-          padding: "12px 16px",
-          borderRadius: 12,
-          fontWeight: 800,
-          width: "100%",
-          cursor: "pointer",
-        }}
+        className={PRIMARY_BTN + " mt-4 w-full"}
+        disabled={!state || !connected || !publicKey}
+        title={!state ? "Missing state. Go back to Discord and click Verify Wallet again." : ""}
       >
         Verify Now
       </button>
 
-      {status && <div style={{ marginTop: 12 }}>{status}</div>}
-      {error && <div style={{ marginTop: 12, color: "#ff6b6b" }}>{error}</div>}
+      {status && <div className="mt-3">{status}</div>}
+      {error && <div className="mt-3 text-[#ff6b6b]">{error}</div>}
 
-      <div style={{ marginTop: 16, opacity: 0.7, fontSize: 12 }}>
-        Tip: If this link expires, go back to Discord and run <b>/verify</b> again.
+      <div className="mt-4 text-xs opacity-70">
+        Tip: If this link expires, go back to Discord and click Verify Wallet again.
       </div>
     </div>
   );
