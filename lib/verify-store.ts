@@ -27,13 +27,27 @@ function now() {
   return Date.now();
 }
 
+/**
+ * FIX:
+ * Upstash may return either a string (raw JSON) OR an already-parsed object.
+ * The old version returned null for non-strings, causing "State expired or invalid."
+ */
 function safeParse<T>(raw: any): T | null {
-  if (!raw || typeof raw !== "string") return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
+  if (!raw) return null;
+
+  // If Upstash returns an object already, accept it.
+  if (typeof raw === "object") return raw as T;
+
+  // If it's a string, parse as JSON.
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
   }
+
+  return null;
 }
 
 function randomState() {
@@ -71,13 +85,13 @@ export async function createVerifyState(discordUserId: string) {
 }
 
 export async function getVerifyState(state: string): Promise<VerifyStateRecord | null> {
-  const raw = await redis.get<string>(`verify:state:${state}`);
+  const raw = await redis.get<any>(`verify:state:${state}`);
   return safeParse<VerifyStateRecord>(raw);
 }
 
 export async function consumeVerifyState(state: string): Promise<VerifyStateRecord | null> {
   const key = `verify:state:${state}`;
-  const raw = await redis.get<string>(key);
+  const raw = await redis.get<any>(key);
   const rec = safeParse<VerifyStateRecord>(raw);
   if (!rec) return null;
   await redis.del(key);
@@ -108,7 +122,7 @@ export async function setLinked(discordUserId: string, wallet: string, roles: Li
 }
 
 export async function getLinked(discordUserId: string): Promise<LinkedRecord | null> {
-  const raw = await redis.get<string>(`discord:user:${discordUserId}`);
+  const raw = await redis.get<any>(`discord:user:${discordUserId}`);
   return safeParse<LinkedRecord>(raw);
 }
 
