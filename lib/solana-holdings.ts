@@ -16,7 +16,14 @@ function must(name: string) {
   return v;
 }
 
-const RPC = () => must("ALCHEMY_SOLANA_RPC_URL");
+/**
+ * FIX: Don't hard-require ALCHEMY_SOLANA_RPC_URL.
+ * Fall back to your already-established NEXT_PUBLIC_SOLANA_RPC_URL.
+ */
+const RPC = () =>
+  process.env.ALCHEMY_SOLANA_RPC_URL ||
+  process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+  must("ALCHEMY_SOLANA_RPC_URL");
 
 export type Holdings = {
   players: boolean;
@@ -47,13 +54,16 @@ export async function getHoldingsByOwner(owner: string): Promise<Holdings> {
       jsonrpc: "2.0",
       id: 1,
       method: "getAssetsByOwner",
-      params: [
-        {
-          ownerAddress: owner,
-          page,
-          limit,
-        },
-      ],
+      /**
+       * FIX: DAS getAssetsByOwner expects params as an OBJECT, not an array.
+       * Using an array here can trigger "invalid type: map, expected a string..."
+       * depending on the provider/implementation.
+       */
+      params: {
+        ownerAddress: String(owner),
+        page,
+        limit,
+      },
     };
 
     const res = await fetch(RPC(), {
@@ -67,7 +77,6 @@ export async function getHoldingsByOwner(owner: string): Promise<Holdings> {
 
     if (!res.ok || json.error) {
       const msg = json.error?.message || `RPC error (HTTP ${res.status})`;
-      // Very common if DAS isn't enabled on provider
       throw new Error(`Solana RPC getAssetsByOwner failed: ${msg}`);
     }
 
