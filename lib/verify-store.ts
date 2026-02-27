@@ -37,7 +37,6 @@ function safeParse<T>(raw: any): T | null {
 }
 
 function randomState() {
-  // URL-safe token
   return crypto.randomBytes(24).toString("hex");
 }
 
@@ -45,28 +44,16 @@ function randomNonce() {
   return crypto.randomBytes(16).toString("hex");
 }
 
-async function setWithTTL(key: string, value: string, ttlSeconds: number) {
-  // Upstash redis supports: redis.set(key, value, { ex: ttl })
-  // but not all clients are typed the same, so we try both patterns.
-  const anyRedis: any = redis as any;
-  try {
-    await anyRedis.set(key, value, { ex: ttlSeconds });
-    return;
-  } catch {
-    // fallback
-  }
-  await anyRedis.set(key, value);
-  try {
-    await anyRedis.expire(key, ttlSeconds);
-  } catch {
-    // ignore
-  }
+/**
+ * Upstash Redis supports SET with EX.
+ * We DO NOT fallback silently — if this fails, something is wrong and we want to know.
+ */
+async function setJsonWithTTL(key: string, obj: any, ttlSeconds: number) {
+  const value = JSON.stringify(obj);
+  // Upstash client supports: redis.set(key, value, { ex: ttl })
+  await (redis as any).set(key, value, { ex: ttlSeconds });
 }
 
-/**
- * Creates a short-lived verification state.
- * This MUST store JSON (stringified), not an object.
- */
 export async function createVerifyState(discordUserId: string) {
   const state = randomState();
   const nonce = randomNonce();
@@ -78,22 +65,16 @@ export async function createVerifyState(discordUserId: string) {
   };
 
   // 15 minutes
-  await setWithTTL(`verify:state:${state}`, JSON.stringify(rec), 15 * 60);
+  await setJsonWithTTL(`verify:state:${state}`, rec, 15 * 60);
 
   return { state, nonce };
 }
 
-/**
- * Reads the state record (no delete).
- */
 export async function getVerifyState(state: string): Promise<VerifyStateRecord | null> {
   const raw = await redis.get<string>(`verify:state:${state}`);
   return safeParse<VerifyStateRecord>(raw);
 }
 
-/**
- * Consumes state record (read then delete).
- */
 export async function consumeVerifyState(state: string): Promise<VerifyStateRecord | null> {
   const key = `verify:state:${state}`;
   const raw = await redis.get<string>(key);
@@ -103,23 +84,14 @@ export async function consumeVerifyState(state: string): Promise<VerifyStateReco
   return rec;
 }
 
-/**
- * Cooldown limiter (per Discord user).
- */
 export async function checkCooldown(discordUserId: string, seconds: number) {
   const key = `discord:cooldown:${discordUserId}`;
-  const anyRedis: any = redis as any;
-
-  const existing = await anyRedis.get(key);
+  const existing = await (redis as any).get(key);
   if (existing) return false;
-
-  await setWithTTL(key, "1", seconds);
+  await (redis as any).set(key, "1", { ex: seconds });
   return true;
 }
 
-/**
- * Link a Discord user to a wallet and store their last roles.
- */
 export async function setLinked(discordUserId: string, wallet: string, roles: LinkedRoles) {
   const rec: LinkedRecord = {
     discordUserId,
@@ -129,7 +101,6 @@ export async function setLinked(discordUserId: string, wallet: string, roles: Li
     lastRoles: roles,
   };
 
-  // forward + reverse mapping + set membership
   await redis.set(`discord:user:${discordUserId}`, JSON.stringify(rec));
   await redis.set(`wallet:discord:${wallet}`, discordUserId);
   await redis.sadd("discord:linked:set", discordUserId);
@@ -138,8 +109,7 @@ export async function setLinked(discordUserId: string, wallet: string, roles: Li
 
 export async function getLinked(discordUserId: string): Promise<LinkedRecord | null> {
   const raw = await redis.get<string>(`discord:user:${discordUserId}`);
-  const rec = safeParse<LinkedRecord>(raw);
-  return rec;
+  return safeParse<LinkedRecord>(raw);
 }
 
 export async function updateLastCheck(discordUserId: string, roles: LinkedRoles) {
