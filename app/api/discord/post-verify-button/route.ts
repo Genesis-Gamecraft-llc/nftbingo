@@ -15,18 +15,9 @@ function must(name: string) {
 
 const BOT_TOKEN = () => must("DISCORD_BOT_TOKEN");
 const CHANNEL_ID = () => must("DISCORD_VERIFY_CHANNEL_ID");
-
-// Reuse CRON_SECRET as admin secret for posting the button
 const ADMIN_SECRET = () => must("CRON_SECRET");
 
-export async function POST(req: Request) {
-  const auth = req.headers.get("authorization") || "";
-  const expected = `Bearer ${ADMIN_SECRET()}`;
-
-  if (auth !== expected) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
+async function postButtonMessage() {
   const res = await fetch(`https://discord.com/api/v10/channels/${CHANNEL_ID()}/messages`, {
     method: "POST",
     headers: {
@@ -53,7 +44,28 @@ export async function POST(req: Request) {
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return json({ error: data }, 500);
+  if (!res.ok) {
+    return { ok: false, status: res.status, error: data };
+  }
+  return { ok: true, messageId: data?.id || null };
+}
 
-  return json({ ok: true, messageId: data?.id || null });
+// ✅ Browser-friendly (GET): /api/discord/post-verify-button?token=...
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const token = url.searchParams.get("token") || "";
+  if (token !== ADMIN_SECRET()) return json({ error: "Unauthorized" }, 401);
+
+  const result = await postButtonMessage();
+  return json(result, result.ok ? 200 : 500);
+}
+
+// ✅ PowerShell-friendly (POST with header): Authorization: Bearer <CRON_SECRET>
+export async function POST(req: Request) {
+  const auth = req.headers.get("authorization") || "";
+  const expected = `Bearer ${ADMIN_SECRET()}`;
+  if (auth !== expected) return json({ error: "Unauthorized" }, 401);
+
+  const result = await postButtonMessage();
+  return json(result, result.ok ? 200 : 500);
 }
