@@ -32,7 +32,6 @@ function verifyDiscordRequest(opts: {
   const sig = Buffer.from(signature, "hex");
   const msg = Buffer.from(timestamp + rawBody);
 
-  // ✅ FIX: no trailing comma — route must not crash
   return nacl.sign.detached.verify(msg, sig, pk);
 }
 
@@ -42,11 +41,10 @@ function buildVerifyUrls(state: string) {
   const encodedBase = encodeURIComponent(base);
   const ref = encodeURIComponent(APP_ORIGIN().replace(/\/$/, ""));
 
-  // Universal links (sometimes fail inside Discord webview)
   const phantomUniversal = `https://phantom.app/ul/browse/${encodedBase}?ref=${ref}`;
   const solflareUniversal = `https://solflare.com/ul/v1/browse/${encodedBase}?ref=${ref}`;
 
-  // ✅ Phantom app-scheme fallback
+  // Phantom app-scheme fallback (often works when universal links don't)
   const phantomScheme = `phantom://browse/${encodedBase}`;
 
   return { base, phantomUniversal, phantomScheme, solflareUniversal };
@@ -72,8 +70,25 @@ function discordEphemeral(content: string, components?: any[]) {
   });
 }
 
+/**
+ * ✅ HARD TIMEOUT WRAPPER
+ * Prevent Discord "didn't respond in time" by ensuring Redis/Upstash never blocks longer than a short limit.
+ */
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: any;
+  const timeout = new Promise<T>((_, rej) => {
+    t = setTimeout(() => rej(new Error(`${label} timed out`)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    try {
+      clearTimeout(t);
+    } catch {}
+  }
+}
+
 export async function POST(req: Request) {
-  // IMPORTANT: Discord needs a valid JSON response *fast*. Any thrown error must still return type:4 JSON.
   try {
     const publicKeyHex = getEnv("DISCORD_PUBLIC_KEY");
     if (!publicKeyHex) return discordEphemeral("Server misconfigured: Missing DISCORD_PUBLIC_KEY.");
@@ -92,25 +107,27 @@ export async function POST(req: Request) {
       return json({ error: "Invalid JSON" }, 400);
     }
 
-    // PING
+    // Discord PING
     if (interaction?.type === 1) return json({ type: 1 });
 
     const userId = interaction?.member?.user?.id || interaction?.user?.id || "";
     const channelId = interaction?.channel_id || "";
     const verifyChannelId = VERIFY_CHANNEL_ID();
 
-    // Cooldown (fail-open: if Redis hiccups, we still respond)
+    // Cooldown (fail-open, but with a hard timeout so it never hangs)
     const enforceCooldown = async () => {
       if (!userId) return true;
       try {
-        return await checkCooldown(userId, 5 * 60);
+        // keep this short so we always answer Discord in time
+        return await withTimeout(checkCooldown(userId, 1 * 60), 900, "Cooldown check");
       } catch {
+        // If Redis is slow/down, don't hard-fail interaction — just allow.
         return true;
       }
     };
 
     // =========================
-    // BUTTON: start_verify_button
+    // BUTTON CLICK: start_verify_button
     // =========================
     if (interaction?.type === 3 && interaction?.data?.custom_id === "start_verify_button") {
       if (verifyChannelId && channelId !== verifyChannelId) {
@@ -120,7 +137,16 @@ export async function POST(req: Request) {
       const allowed = await enforceCooldown();
       if (!allowed) return discordEphemeral("Cooldown: try again in a few minutes.");
 
-      const { state } = await createVerifyState(userId);
+      let state: string;
+      try {
+        // hard timeout so we never hang Discord
+        ({ state } = await withTimeout(createVerifyState(userId), 1200, "State creation"));
+      } catch {
+        return discordEphemeral(
+          `Verification backend is busy right now. Try again in a moment.\n${mobileTipText()}`
+        );
+      }
+
       const { base, phantomUniversal, phantomScheme, solflareUniversal } = buildVerifyUrls(state);
 
       return discordEphemeral(`Click below to verify your wallet.\n${mobileTipText()}`, [
@@ -149,7 +175,15 @@ export async function POST(req: Request) {
       const allowed = await enforceCooldown();
       if (!allowed) return discordEphemeral("Cooldown: try again in a few minutes.");
 
-      const { state } = await createVerifyState(userId);
+      let state: string;
+      try {
+        ({ state } = await withTimeout(createVerifyState(userId), 1200, "State creation"));
+      } catch {
+        return discordEphemeral(
+          `Verification backend is busy right now. Try again in a moment.\n${mobileTipText()}`
+        );
+      }
+
       const { base, phantomUniversal, phantomScheme, solflareUniversal } = buildVerifyUrls(state);
 
       return discordEphemeral(`Click to verify your wallet:\n${mobileTipText()}`, [
@@ -169,16 +203,32 @@ export async function POST(req: Request) {
       const allowed = await enforceCooldown();
       if (!allowed) return discordEphemeral("Cooldown: try again in a few minutes.");
 
-      const linked = await getLinked(userId);
-      const { state } = await createVerifyState(userId);
+      // linked lookup must not hang
+      let linked: any = null;
+      try {
+        linked = await withTimeout(getLinked(userId), 900, "Linked lookup");
+      } catch {
+        // If Redis stalls, still allow user to refresh via a new verify link
+        linked = null;
+      }
+
+      let state: string;
+      try {
+        ({ state } = await withTimeout(createVerifyState(userId), 1200, "State creation"));
+      } catch {
+        return discordEphemeral(
+          `Verification backend is busy right now. Try again in a moment.\n${mobileTipText()}`
+        );
+      }
+
       const { base, phantomUniversal, phantomScheme, solflareUniversal } = buildVerifyUrls(state);
 
       if (!linked) {
-        return discordEphemeral(`You’re not linked yet. Use /verify first.\n${mobileTipText()}`, [
+        return discordEphemeral(`Open the page below to verify/refresh your roles.\n${mobileTipText()}`, [
           {
             type: 1,
             components: [
-              { type: 2, style: 5, label: "Verify Wallet", url: base },
+              { type: 2, style: 5, label: "Verify / Refresh", url: base },
               { type: 2, style: 5, label: "Open in Solflare", url: solflareUniversal },
               { type: 2, style: 5, label: "Open in Phantom", url: phantomUniversal },
               { type: 2, style: 5, label: "Open in Phantom (alt)", url: phantomScheme },
@@ -203,10 +253,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Always respond
     return discordEphemeral("Unhandled interaction.");
   } catch (e: any) {
-    // Always respond with a Discord interaction response, never let it crash out.
     const msg = String(e?.message || e || "Unknown error");
     return discordEphemeral(`Verification error: ${msg}`);
   }
