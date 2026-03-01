@@ -47,7 +47,7 @@ function discordEphemeral(content: string, components?: any[]) {
 }
 
 function mobileTipText() {
-  return "📱 Mobile tip: If wallet connect doesn’t open from Discord, tap ⋯ and choose **Open in Browser**.";
+  return "📱 Mobile tip: If wallet connect doesn’t open copy the URL from the browser and open it in your mobile wallet browser.";
 }
 
 function buildVerifyUrl(state: string) {
