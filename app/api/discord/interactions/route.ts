@@ -47,14 +47,14 @@ function discordEphemeral(content: string, components?: any[]) {
 }
 
 function mobileTipText() {
-  return "📱 Mobile tip: If the verify page can’t connect your wallet from Discord, tap ⋯ and choose **Open in Browser**.";
+  return "📱 Mobile tip: If wallet connect doesn’t open from Discord, tap ⋯ and choose **Open in Browser**.";
 }
 
 function buildVerifyUrl(state: string) {
   return `${APP_ORIGIN().replace(/\/$/, "")}/verify?state=${encodeURIComponent(state)}`;
 }
 
-// Prevent Redis/Upstash stalls from causing Discord timeouts.
+// Prevent Redis/Upstash stalls from causing Discord timeouts / interaction failed.
 async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   let t: any;
   const timeout = new Promise<T>((_, rej) => {
@@ -80,23 +80,13 @@ export async function POST(req: Request) {
     const timestamp = req.headers.get("x-signature-timestamp");
     const rawBody = await req.text();
 
-    const ok = verifyDiscordRequest({
-      publicKeyHex,
-      signature,
-      timestamp,
-      rawBody,
-    });
-
-    if (!ok) {
-      return json({ error: "Bad signature" }, 401);
-    }
+    const ok = verifyDiscordRequest({ publicKeyHex, signature, timestamp, rawBody });
+    if (!ok) return json({ error: "Bad signature" }, 401);
 
     const interaction = JSON.parse(rawBody);
 
     // Discord ping
-    if (interaction.type === 1) {
-      return json({ type: 1 });
-    }
+    if (interaction.type === 1) return json({ type: 1 });
 
     const channelId = interaction.channel_id;
     const verifyChannelId = VERIFY_CHANNEL_ID();
@@ -125,6 +115,7 @@ export async function POST(req: Request) {
 
       const url = buildVerifyUrl(state);
 
+      // ✅ ONE link only (clean Discord UX)
       return discordEphemeral(`Click below to verify your wallet:\n${mobileTipText()}`, [
         {
           type: 1,

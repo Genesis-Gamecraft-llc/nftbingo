@@ -26,7 +26,7 @@ async function postButtonMessage() {
     },
     body: JSON.stringify({
       content:
-        "🎟 **NFTBingo Holder Verification**\n\nClick the button below to verify your wallet and receive your holder roles.\n\n📱 **Mobile tip:** If the verify page can’t connect your wallet from Discord, tap ⋯ and choose **Open in Browser**.",
+        "🎟 **NFTBingo Holder Verification**\n\nClick the button below to verify your wallet and receive your holder roles.\n\n📱 **Mobile tip:** If wallet connect doesn’t open from Discord, tap ⋯ and choose **Open in Browser**.",
       components: [
         {
           type: 1,
@@ -44,13 +44,10 @@ async function postButtonMessage() {
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    return { ok: false, status: res.status, error: data };
-  }
+  if (!res.ok) return { ok: false, status: res.status, error: data };
   return { ok: true, messageId: data?.id || null };
 }
 
-// ✅ Browser-friendly (GET): /api/discord/post-verify-button?token=...
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const token = url.searchParams.get("token") || "";
@@ -60,7 +57,6 @@ export async function GET(req: Request) {
   return json(result, result.ok ? 200 : 500);
 }
 
-// ✅ PowerShell-friendly (POST with header): Authorization: Bearer <CRON_SECRET>
 export async function POST(req: Request) {
   const auth = req.headers.get("authorization") || "";
   const expected = `Bearer ${ADMIN_SECRET()}`;
