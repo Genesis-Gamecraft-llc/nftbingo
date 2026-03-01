@@ -46,15 +46,27 @@ function discordEphemeral(content: string, components?: any[]) {
   });
 }
 
-function buildVerifyUrls(state: string) {
-  const base = `${APP_ORIGIN().replace(/\/$/, "")}/verify?state=${encodeURIComponent(state)}`;
-  const encoded = encodeURIComponent(base);
+function mobileTipText() {
+  return "📱 Mobile tip: If the verify page can’t connect your wallet from Discord, tap ⋯ and choose **Open in Browser**.";
+}
 
-  return {
-    base,
-    phantom: `https://phantom.app/ul/browse/${encoded}`,
-    solflare: `https://solflare.com/ul/v1/browse/${encoded}`,
-  };
+function buildVerifyUrl(state: string) {
+  return `${APP_ORIGIN().replace(/\/$/, "")}/verify?state=${encodeURIComponent(state)}`;
+}
+
+// Prevent Redis/Upstash stalls from causing Discord timeouts.
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: any;
+  const timeout = new Promise<T>((_, rej) => {
+    t = setTimeout(() => rej(new Error(`${label} timed out`)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    try {
+      clearTimeout(t);
+    } catch {}
+  }
 }
 
 export async function POST(req: Request) {
@@ -95,25 +107,28 @@ export async function POST(req: Request) {
     }
 
     // Button click OR slash command
-    if (
-      (interaction.type === 3 &&
-        interaction.data?.custom_id === "start_verify_button") ||
-      interaction.data?.name === "verify"
-    ) {
-      const userId =
-        interaction.member?.user?.id || interaction.user?.id;
+    const isVerifyButton =
+      interaction.type === 3 && interaction.data?.custom_id === "start_verify_button";
+    const isVerifySlash = interaction.data?.name === "verify";
 
-      const { state } = await createVerifyState(userId);
-      const { base, phantom, solflare } = buildVerifyUrls(state);
+    if (isVerifyButton || isVerifySlash) {
+      const userId = interaction.member?.user?.id || interaction.user?.id;
 
-      return discordEphemeral("Click below to verify your wallet:", [
+      let state: string;
+      try {
+        ({ state } = await withTimeout(createVerifyState(userId), 1200, "createVerifyState"));
+      } catch {
+        return discordEphemeral(
+          `Verification backend is busy right now. Try again in a moment.\n${mobileTipText()}`
+        );
+      }
+
+      const url = buildVerifyUrl(state);
+
+      return discordEphemeral(`Click below to verify your wallet:\n${mobileTipText()}`, [
         {
           type: 1,
-          components: [
-            { type: 2, style: 5, label: "Open Verification", url: base },
-            { type: 2, style: 5, label: "Open in Phantom", url: phantom },
-            { type: 2, style: 5, label: "Open in Solflare", url: solflare },
-          ],
+          components: [{ type: 2, style: 5, label: "Open Verification", url }],
         },
       ]);
     }
