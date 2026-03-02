@@ -26,7 +26,7 @@ async function postButtonMessage() {
     },
     body: JSON.stringify({
       content:
-        "🎟 **NFTBingo Holder Verification**\n\nClick the button below to verify your wallet and receive your holder roles.\n\n📱 **Mobile tip:** If wallet connect doesn’t open, copy the URL from the browser and open it in your mobile wallet browser.",
+        "🎟 **NFTBingo Holder Verification**\n\nClick the button below to verify your wallet and receive your holder roles.\n\n📱 **Mobile tip:** If wallet connect doesn’t open, copy the URL from the browser and open it in your mobile wallet browser.\n\nIf it fails, retry immediately and it should work.",
       components: [
         {
           type: 1,
