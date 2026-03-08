@@ -9,7 +9,7 @@ const nextConfig = {
       },
       {
         source: "/giveaway",
-        destination: "https://zealy.io/cw/nftbingo/questboard/f9623b3f-00b5-4c91-bdac-8bae13db7add",
+        destination: "https://zealy.io/cw/nftbingo/questboard/af1584ca-528a-43be-b3d1-6bc4cc5b07a2",
         permanent: false,
       },
     ];
