@@ -12,6 +12,11 @@ const nextConfig = {
         destination: "https://zealy.io/cw/nftbingo/questboard/af1584ca-528a-43be-b3d1-6bc4cc5b07a2",
         permanent: false,
       },
+      {
+        source: "/magiceden",
+        destination: "https://magiceden.us/u/NFTBingo?chains=%5B%22solana%22%5D&wallets=%5B%22ANeJq1Hg1VA1xAn3XMiqesfwFkgfdHK521L6TmW2yjAh%22%5D&activeTab=%22allItems%22",
+        permanent: false,
+      },
     ];
   },
 
